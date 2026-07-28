@@ -1,0 +1,48 @@
+[gd_resource type="Theme" load_steps=8 format=3]
+
+[ext_resource type="Texture2D" path="res://assets/theme/bevel_raised.png" id="1"]
+[ext_resource type="Texture2D" path="res://assets/theme/bevel_sunken.png" id="2"]
+[ext_resource type="Texture2D" path="res://assets/theme/window_frame.png" id="3"]
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_raised"]
+texture = ExtResource("1")
+texture_margin_left = 1.0
+texture_margin_top = 1.0
+texture_margin_right = 1.0
+texture_margin_bottom = 1.0
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_sunken"]
+texture = ExtResource("2")
+texture_margin_left = 1.0
+texture_margin_top = 1.0
+texture_margin_right = 1.0
+texture_margin_bottom = 1.0
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_window"]
+texture = ExtResource("3")
+texture_margin_left = 2.0
+texture_margin_top = 2.0
+texture_margin_right = 2.0
+texture_margin_bottom = 2.0
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_face"]
+bg_color = Color(0.752941, 0.752941, 0.752941, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_titlebar"]
+bg_color = Color(0, 0, 0.501961, 1)
+
+[resource]
+default_font_size = 14
+Panel/styles/panel = SubResource("StyleBoxFlat_face")
+Button/styles/normal = SubResource("StyleBoxTexture_raised")
+Button/styles/hover = SubResource("StyleBoxTexture_raised")
+Button/styles/pressed = SubResource("StyleBoxTexture_sunken")
+Button/styles/disabled = SubResource("StyleBoxTexture_raised")
+Button/colors/font_color = Color(0, 0, 0, 1)
+Button/colors/font_hover_color = Color(0, 0, 0, 1)
+Button/colors/font_pressed_color = Color(0, 0, 0, 1)
+Label/colors/font_color = Color(0, 0, 0, 1)
+TitleBarPanel/base_type = &"Panel"
+TitleBarPanel/styles/panel = SubResource("StyleBoxFlat_titlebar")
+WindowFramePanel/base_type = &"Panel"
+WindowFramePanel/styles/panel = SubResource("StyleBoxTexture_window")

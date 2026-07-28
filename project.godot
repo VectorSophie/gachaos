@@ -24,6 +24,7 @@ project/assembly_name="gachaos"
 TicketEconomy="*res://src/Economy/TicketEconomy.cs"
 EffectScheduler="*res://src/Effects/EffectScheduler.cs"
 DebugSelfCheck="*res://src/Debug/DebugSelfCheck.cs"
+DebugCapture="*res://src/Debug/DebugCapture.cs"
 
 [display]
 
