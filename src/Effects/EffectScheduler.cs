@@ -1,14 +1,19 @@
 using Godot;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Gachaos.Economy;
 using Gachaos.Effects.Curses;
+using Gachaos.Gacha;
 
 namespace Gachaos.Effects;
 
 public partial class EffectScheduler : Node
 {
+    public const int HistoryCap = 20;
+
     private readonly Dictionary<string, IEffect> _registry = new();
+    private readonly RandomNumberGenerator _pickRng = new();
 
     public IReadOnlyDictionary<string, IEffect> Registry => _registry;
 
@@ -17,10 +22,14 @@ public partial class EffectScheduler : Node
     public override void _Ready()
     {
         // TODO(task 5 continuation): giant cursor (needs custom icon
-        // generation) and volume mute (needs Core Audio COM interop) — both
-        // need a real Windows box to verify, tracked separately.
+        // generation) and volume mute (needs Core Audio COM interop) both
+        // need real Win32 work; ScreenFlip/ScreenRotate90 need
+        // ChangeDisplaySettingsEx. All four are no-op stubs for now, verify
+        // on real Windows before treating any of them as done.
         Register(new SwapMouseButtonsEffect());
         Register(new CursorJitterEffect());
+        Register(new ScreenFlipEffect());
+        Register(new ScreenRotate90Effect());
 
         RecoverFromCrash();
 
@@ -48,8 +57,14 @@ public partial class EffectScheduler : Node
         SaveManager.Save(data);
     }
 
-    public void ApplyPullResult(IEffect effect)
+    // Picks a random registered effect matching the rolled tier, applies it,
+    // and records it into history/stats/pity. Returns the chosen effect so
+    // the caller (Pull button handler) can show it.
+    public IEffect ApplyPullResult(Rarity tier)
     {
+        var candidates = _registry.Values.Where(e => e.Tier == tier).ToList();
+        var effect = candidates[_pickRng.RandiRange(0, candidates.Count - 1)];
+
         effect.Apply();
 
         var data = Economy.Data;
@@ -59,7 +74,29 @@ public partial class EffectScheduler : Node
             long expiry = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + (long)effect.DurationSeconds;
             data.ActiveEffects.Add(new ActiveEffectRecord { EffectId = effect.Id, ExpiryUnixTime = expiry });
         }
+
+        data.PullHistory.Insert(0, new PullRecord
+        {
+            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            EffectId = effect.Id,
+            DisplayName = effect.DisplayName,
+            Tier = effect.Tier,
+        });
+        if (data.PullHistory.Count > HistoryCap)
+            data.PullHistory.RemoveRange(HistoryCap, data.PullHistory.Count - HistoryCap);
+
+        data.TotalPulls++;
+        data.RarityCounts[(int)effect.Tier]++;
+        if (effect.Tier > (Rarity)data.BestRarityIndex)
+        {
+            data.BestRarityIndex = (int)effect.Tier;
+            data.BestPullName = effect.DisplayName;
+        }
+
+        data.PullsSinceEpicPlus = RarityRoller.IsEpicOrHigher(effect.Tier) ? 0 : data.PullsSinceEpicPlus + 1;
+
         SaveManager.Save(data);
+        return effect;
     }
 
     // Global panic hotkey (Ctrl+Alt+P) reverts everything. Current binding

@@ -46,3 +46,5 @@ TitleBarPanel/base_type = &"Panel"
 TitleBarPanel/styles/panel = SubResource("StyleBoxFlat_titlebar")
 WindowFramePanel/base_type = &"Panel"
 WindowFramePanel/styles/panel = SubResource("StyleBoxTexture_window")
+HistoryPanel/base_type = &"Panel"
+HistoryPanel/styles/panel = SubResource("StyleBoxTexture_sunken")
