@@ -8,15 +8,10 @@ on:
 jobs:
   windows-exe:
     runs-on: windows-latest
-    defaults:
-      run:
-        working-directory: app
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: app
       - name: Unit tests
         run: cargo test
       - name: Build gachaos.exe
@@ -24,7 +19,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: gachaos-exe
-          path: app/target/release/gachaos.exe
+          path: target/release/gachaos.exe
           if-no-files-found: error
 
   ui-flow:
