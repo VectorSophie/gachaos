@@ -32,7 +32,7 @@ click up. Clicking during a big reveal fast-forwards it.
 ## Curses
 
 Each curse records what it changes before changing it (`Restore` in
-`app/src/curses/mod.rs`), and that record is saved, so it can be undone on
+`src/curses/mod.rs`), and that record is saved, so it can be undone on
 expiry, by `Ctrl+Alt+P`, on quit, or on the next launch after a crash. None of
 the changes are written to the Windows profile, so a reboot also undoes them.
 See the README for the roster and `docs/QA.md` for what each one should do.

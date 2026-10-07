@@ -4,7 +4,7 @@
   "version": "0.2.0",
   "identifier": "com.vectorsophie.gachaos",
   "build": {
-    "frontendDist": "../ui"
+    "frontendDist": "ui"
   },
   "app": {
     "withGlobalTauri": true,

@@ -24,9 +24,9 @@ guaranteed Epic or better.
 
 - `ui/index.html`: the whole interface: window chrome, reels, pixel effects
   and chip sounds. No framework, no build step.
-- `app/`: the Tauri 2 shell in Rust. It owns the save file, the odds, the real
-  Win32 curses (`app/src/curses/win32.rs`), the tray icon, the global hotkey
-  and crash recovery.
+- `src/`, `Cargo.toml`, `tauri.conf.json`: the Tauri 2 shell in Rust. It owns
+  the save file, the odds (`src/game.rs`), the real Win32 curses
+  (`src/curses/win32.rs`), the tray icon, the global hotkey and crash recovery.
 - `tests/ui/`: a browser test that rolls every tier against a mocked bridge.
 - `docs/QA.md`: the manual checklist for the curses on real Windows.
 
@@ -35,9 +35,8 @@ guaranteed Epic or better.
 Needs Rust (stable). On Windows, WebView2 ships with Windows 10 and 11.
 
 ```sh
-cd app
 cargo test               # game rules, save file, curse helpers
-cargo build --release    # -> app/target/release/gachaos.exe (single file)
+cargo build --release    # -> target/release/gachaos.exe (single file)
 ```
 
 CI builds `gachaos.exe` on `windows-latest` for every push. Grab it from the

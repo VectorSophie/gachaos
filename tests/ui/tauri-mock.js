@@ -1,6 +1,6 @@
 // Stand-in for window.__TAURI__ so ui/index.html can be driven in a plain
 // browser by tests. Mirrors the Rust commands closely enough for UI flows;
-// the real rules are tested in app/src/game.rs.
+// the real rules are tested in src/game.rs.
 (() => {
   const CATALOG = [
     { id: 'giant', name: 'Giant Cursor', tier: 0, secs: 120, desc: 'Your mouse cursor is four times its normal size.', oneIn: 3 },

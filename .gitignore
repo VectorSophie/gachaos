@@ -1,29 +1,11 @@
-# Godot 4+ specific ignores
-.godot/
-.import/
-export.cfg
-export_presets.cfg.bak
-*.translation
-
-# Godot exported builds
-/build/
-/exports/
-
-# Mono/.NET
-.mono/
-data_*/
-bin/
-obj/
-*.csproj.user
-
-# Misc
-*.tmp
-*.log
-
 # Rust / Tauri
-app/target/
-app/gen/
+/target/
+/gen/
 
 # UI test output
 tests/ui/out/
 node_modules/
+
+# Misc
+*.tmp
+*.log
