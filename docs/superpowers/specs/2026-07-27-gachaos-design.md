@@ -2,6 +2,10 @@
 
 Date: 2026-07-27
 
+> Superseded for stack, visuals and roll style by
+> [2026-10-07-gachaos-redesign.md](2026-10-07-gachaos-redesign.md). The concept,
+> economy and guardrails below still apply.
+
 ## Concept
 
 A Windows exe that turns boredom into a gacha-style dopamine hit. The app's own
