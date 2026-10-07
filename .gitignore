@@ -19,3 +19,11 @@ obj/
 # Misc
 *.tmp
 *.log
+
+# Rust / Tauri
+app/target/
+app/gen/
+
+# UI test output
+tests/ui/out/
+node_modules/
