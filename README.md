@@ -52,6 +52,17 @@ a Windows setting. These work on any OS and vanish the moment gachaos closes.
 - Launching gachaos again brings the running copy forward. `gachaos.exe --cure`
   cures through the running copy, or undoes a leftover curse if none is running.
 
+## Download
+
+Grab the latest build from the [Releases page](https://github.com/VectorSophie/gachaos/releases):
+`gachaos-<version>-windows-x64.exe` (single file), a universal macOS `.dmg`, or
+a Linux `.AppImage` / `.deb`. The full roster of curses runs on Windows; on
+macOS and Linux only the overlay curses (marked * above) are available.
+
+To cut a release, push a tag like `v0.3.0`. The **release** workflow builds all
+three, attaches them with checksums, and uses `.github/release-notes/<tag>.md`
+as the notes.
+
 ## Layout
 
 - `ui/index.html`: the whole interface: window chrome, reels, pixel effects

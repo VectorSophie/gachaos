@@ -1,6 +1,6 @@
 [package]
 name = "gachaos"
-version = "0.2.0"
+version = "0.3.0"
 description = "A boredom gacha that curses your desktop"
 edition = "2021"
 rust-version = "1.80"
@@ -9,7 +9,7 @@ rust-version = "1.80"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
+tauri = { version = "2", features = ["tray-icon", "macos-private-api"] }
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
