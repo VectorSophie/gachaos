@@ -1,14 +1,15 @@
 name: release
 
 # Push a tag like v0.3.0 to build gachaos for Windows, macOS and Linux and
-# publish a GitHub Release with the files attached.
+# publish a GitHub Release with the files attached. Or run it by hand on a
+# branch with a tag name: it builds that branch and creates the tag there.
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing tag to (re)build, e.g. v0.3.0"
+        description: "Tag to publish, e.g. v0.3.0 (created at the chosen branch's commit if it doesn't exist)"
         required: true
 
 permissions:
@@ -22,8 +23,6 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ env.TAG }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test
@@ -48,8 +47,6 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ env.TAG }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
@@ -77,8 +74,6 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ env.TAG }}
       - name: System libraries for the webview, tray and AppImage
         run: |
           sudo apt-get update
@@ -109,8 +104,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ env.TAG }}
       - uses: actions/download-artifact@v4
         with:
           pattern: dist-*
@@ -127,5 +120,5 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/* --clobber
           else
-            gh release create "$TAG" dist/* --title "gachaos $TAG" --notes-file "$notes"
+            gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "gachaos $TAG" --notes-file "$notes"
           fi

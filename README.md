@@ -59,9 +59,10 @@ Grab the latest build from the [Releases page](https://github.com/VectorSophie/g
 a Linux `.AppImage` / `.deb`. The full roster of curses runs on Windows; on
 macOS and Linux only the overlay curses (marked * above) are available.
 
-To cut a release, push a tag like `v0.3.0`. The **release** workflow builds all
-three, attaches them with checksums, and uses `.github/release-notes/<tag>.md`
-as the notes.
+To cut a release, push a tag like `v0.3.0`, or run the **release** workflow by
+hand on `master` with the tag name (it creates the tag). It builds all three,
+attaches them with checksums, and uses `.github/release-notes/<tag>.md` as the
+notes.
 
 ## Layout
 
