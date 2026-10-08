@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>gachaos overlay</title>
+<!--
+Click-through, always-on-top window that draws the overlay curses (pal, rainbow trail, snow, fog, spotlight, confetti,
+ghost, doom clock, red pulse, eclipse). Same pixel rules as the main UI: integer scale, fixed palette, Bayer dither
+instead of alpha. It only exists while gachaos runs, so these curses can never outlive the app.
+-->
+<style>
+html,body{margin:0; height:100%; background:transparent; overflow:hidden}
+canvas{position:fixed; left:0; top:0; image-rendering:pixelated}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+(function(){
+'use strict';
+const T=window.__TAURI__, invoke=(c,a)=>T.core.invoke(c,a);
+const c=document.getElementById('c'), g=c.getContext('2d');
+const BAY=[0,8,2,10,12,4,14,6,3,11,1,9,15,7,13,5].map(v=>(v+.5)/16);
+const u32=h=>{const n=parseInt(h.slice(1),16); return ((255<<24)|((n&255)<<16)|(((n>>8)&255)<<8)|((n>>16)&255))>>>0;};
+const K='#000000', W='#ffffff';
+const RAINBOW=['#ff4f4f','#ffa64f','#ffe04f','#7cff4f','#4fd8ff','#5a6aff','#c04fff'];
+const RED=['#2a0006','#7a0a14','#d4142a','#ff5a5a','#ffd6d6'];
+const rnd=(a,b)=>a+Math.random()*(b-a), clamp=(v,a,b)=>v<a?a:v>b?b:v;
+let S=3, LW=0, LH=0, img=null, buf=null;
+function layout(){ S=innerWidth>=1600?3:2; LW=Math.max(1,Math.ceil(innerWidth/S)); LH=Math.max(1,Math.ceil(innerHeight/S));
+  c.width=LW; c.height=LH; c.style.width=LW*S+'px'; c.style.height=LH*S+'px'; g.imageSmoothingEnabled=false;
+  img=g.createImageData(LW,LH); buf=new Uint32Array(img.data.buffer); piles=new Float32Array(LW); }
+addEventListener('resize',layout);
+
+// tiny 5x7 font for the clock and the ghost
+const FONT={'0':'.###./#...#/#..##/#.#.#/##..#/#...#/.###.','1':'..#../.##../..#../..#../..#../..#../.###.','2':'.###./#...#/....#/...#./..#../.#.../#####',
+'3':'####./....#/....#/.###./....#/....#/####.','4':'...#./..##./.#.#./#..#./#####/...#./...#.','5':'#####/#..../####./....#/....#/#...#/.###.',
+'6':'..##./.#.../#..../####./#...#/#...#/.###.','7':'#####/....#/...#./..#../.#.../.#.../.#...','8':'.###./#...#/#...#/.###./#...#/#...#/.###.',
+'9':'.###./#...#/#...#/.####/....#/...#./.##..',':':'...../.##../.##../...../.##../.##../.....','B':'####./#...#/#...#/####./#...#/#...#/####.',
+'O':'.###./#...#/#...#/#...#/#...#/#...#/.###.','!':'..#../..#../..#../..#../..#../...../..#..',' ':'...../...../...../...../...../...../.....'};
+function text(str,x,y,s,col,outline){ const draw=(ox,oy,cc)=>{ for(let i=0;i<str.length;i++){ const rows=(FONT[str[i]]||FONT[' ']).split('/');
+    rows.forEach((row,ry)=>{ for(let rx=0;rx<5;rx++) if(row[rx]==='#'){ g.fillStyle=typeof cc==='function'?cc(ry):cc; g.fillRect(ox+(i*6+rx)*s, oy+ry*s, s, s); } }); } };
+  if(outline) for(const [dx,dy] of [[-1,0],[1,0],[0,-1],[0,1],[1,1]]) draw(x+dx*s,y+dy*s,K);
+  draw(x,y,col); }
+const tw=(str,s)=>(str.length*6-1)*s;
+
+// sprites
+const PAL=[ // a small blob, two walk frames
+  ['....####....','..##oooo##..','.#oooooooo#.','#ooww#oww#o#','#ooww#oww#o#','#oooooooooo#','#oooo##oooo#','.#oooooooo#.','..#.#..#.#..','..##....##..'],
+  ['....####....','..##oooo##..','.#oooooooo#.','#ooww#oww#o#','#ooww#oww#o#','#oooooooooo#','#oooo##oooo#','.#oooooooo#.','.#..#..#..#.','##........##']];
+const GHOST=['....#####.....','..##wwwww##...','.#wwwwwwwww#..','#wwwwwwwwwww#.','#ww##www##ww#.','#ww##www##ww#.','#wwwwwwwwwww#.','#wwwww##wwww#.','#wwwwwwwwwww#.','#wwwwwwwwwww#.','#ww#ww#ww#ww#.','#w#.#w#.#w#.#.','.#...#...#....'];
+function sprite(rows,x,y,cols,flip){ rows.forEach((row,ry)=>{ for(let rx=0;rx<row.length;rx++){ const ch=row[flip?row.length-1-rx:rx]; if(ch==='.') continue;
+  g.fillStyle=cols[ch]||K; g.fillRect(Math.round(x)+rx,Math.round(y)+ry,1,1); } }); }
+
+// state
+let parts=new Set(), untilMs=0, cur=null, t=0, last=performance.now();
+const trail=[], flakes=[], confetti=[]; let piles=new Float32Array(1);
+const pal={x:40,dir:1,hop:0,vy:0,next:2}; const ghost={x:-20,y:-20,boo:0};
+function spawnGhost(){ const e=Math.floor(Math.random()*4); ghost.x=e===0?-16:e===1?LW+2:rnd(0,LW); ghost.y=e===2?-16:e===3?LH+2:rnd(0,LH); }
+spawnGhost();
+
+async function poll(){ try{ const s=await invoke('overlay_state'); parts=new Set(s.parts); untilMs=s.untilMs;
+    cur=s.cursor?[s.cursor[0]/S, s.cursor[1]/S]:null; }catch(e){} }
+
+function pixelPass(){
+  const fog=parts.has('fog'), spot=parts.has('spotlight')||parts.has('eclipse'), pulse=parts.has('redpulse');
+  if(!fog&&!spot&&!pulse) return false;
+  const fogR=55+Math.sin(t*.6)*15, frac=untilMs?clamp((untilMs-Date.now())/600000,0,1):1;
+  const spotR=parts.has('eclipse')?28+frac*80:48, cx=cur?cur[0]:LW/2, cy=cur?cur[1]:LH/2;
+  const beat=(t%1.2), heart=beat<.12?1:beat<.24?.3:beat<.36?.8:0, pulseAmt=.35+heart*.35;
+  const FOG1=u32('#c8ccd8'), FOG2=u32('#8a8e9c'), BLACK=u32(K), RED1=u32(RED[1]), RED0=u32(RED[0]), CORONA=[u32(RED[2]),u32('#ff9a3a'),u32('#ffe04f')];
+  const midx=LW/2, midy=LH/2, maxd=Math.hypot(midx,midy);
+  for(let y=0,i=0;y<LH;y++){ const by=(y&3)<<2; for(let x=0;x<LW;x++,i++){ const th=BAY[by|(x&3)]; let px=0;
+    if(spot){ const d=Math.hypot(x-cx,y-cy)-spotR;
+      if(parts.has('eclipse')&&d>-3&&d<3){ px=CORONA[clamp(Math.floor((d+3)/2+th),0,2)]; }
+      else if(d>0){ const k=d/10; if(k>1||th<k) px=BLACK; } }
+    if(!px&&fog){ const e=Math.min(x,y,LW-x,LH-y); const k=(fogR-e)/fogR; if(k>th) px=k>.55+th*.3?FOG2:FOG1; }
+    if(!px&&pulse){ const k=(Math.hypot(x-midx,y-midy)/maxd-.55)*2.2*pulseAmt; if(k>th) px=k>.6+th*.4?RED0:RED1; }
+    buf[i]=px; } }
+  g.putImageData(img,0,0); return true;
+}
+
+function frame(now){
+  const dt=Math.min(.05,(now-last)/1000); last=now; t+=dt;
+  if(!pixelPass()) g.clearRect(0,0,LW,LH);
+  // rainbow trail
+  if(parts.has('trail')&&cur){ trail.push({x:cur[0],y:cur[1]}); if(trail.length>36) trail.shift();
+    trail.forEach((p,i)=>{ const s=1+Math.floor(i/9); g.fillStyle=RAINBOW[(i+Math.floor(t*12))%RAINBOW.length]; g.fillRect(Math.round(p.x)-s,Math.round(p.y)-s+2,s*2,s*2); }); }
+  else trail.length=0;
+  // snow, piling up along the bottom
+  if(parts.has('snow')){ if(flakes.length<LW/3) flakes.push({x:rnd(0,LW),y:-2,vy:rnd(10,22),ph:rnd(0,6)});
+    for(let i=flakes.length-1;i>=0;i--){ const f=flakes[i]; f.y+=f.vy*dt; f.ph+=dt*2; f.x+=Math.sin(f.ph)*.25;
+      const col=clamp(Math.round(f.x),0,LW-1);
+      if(f.y>=LH-1-piles[col]){ piles[col]=Math.min(40,piles[col]+.6); for(const n of [-1,1]){ const j=col+n; if(j>=0&&j<LW&&piles[j]<piles[col]-2) piles[j]+=.3; } flakes.splice(i,1); continue; }
+      g.fillStyle=f.vy>18?W:'#dfe6ff'; g.fillRect(Math.round(f.x),Math.round(f.y),1,1); }
+    g.fillStyle='#eef3ff'; for(let x=0;x<LW;x++){ const h=Math.floor(piles[x]); if(h>0) g.fillRect(x,LH-h,1,h); }
+    g.fillStyle='#c8d2ee'; for(let x=0;x<LW;x++){ const h=Math.floor(piles[x]); if(h>0) g.fillRect(x,LH-h,1,1); } }
+  else if(flakes.length){ flakes.length=0; piles.fill(0); }
+  // confetti
+  if(parts.has('confetti')){ for(let k=0;k<3;k++) confetti.push({x:rnd(0,LW),y:-3,vy:rnd(12,30),vx:rnd(-6,6),ph:rnd(0,6),c:RAINBOW[Math.floor(rnd(0,7))]});
+    for(let i=confetti.length-1;i>=0;i--){ const p=confetti[i]; p.y+=p.vy*dt; p.x+=p.vx*dt+Math.sin(p.ph)*.3; p.ph+=dt*5; if(p.y>LH){ confetti.splice(i,1); continue; }
+      g.fillStyle=p.c; const f=Math.abs(Math.cos(p.ph))>.5; g.fillRect(Math.round(p.x),Math.round(p.y),f?2:1,f?1:2); } }
+  else confetti.length=0;
+  // pixel pal
+  if(parts.has('pal')){ pal.next-=dt; if(pal.next<0){ pal.next=rnd(1.5,4); if(Math.random()<.35) pal.dir*=-1; else if(pal.hop===0) pal.vy=-40; }
+    pal.x+=pal.dir*14*dt; if(pal.x<2||pal.x>LW-14){ pal.dir*=-1; pal.x=clamp(pal.x,2,LW-14); }
+    pal.vy+=120*dt; pal.hop=Math.min(0,pal.hop+pal.vy*dt); if(pal.hop===0) pal.vy=0;
+    sprite(PAL[Math.floor(t*6)%2],pal.x,LH-28+pal.hop,{'#':K,o:'#4fbf4f',w:W},pal.dir<0); }
+  // ghost hunt
+  if(parts.has('ghost')){ if(ghost.boo>0){ ghost.boo-=dt; if(ghost.boo>.5){ g.fillStyle=W; g.fillRect(0,0,LW,LH); }
+      text('BOO!',Math.round(LW/2-tw('BOO!',6)/2),Math.round(LH/2-21),6,'#7a0a14',true); if(ghost.boo<=0) spawnGhost(); }
+    else if(cur){ const dx=cur[0]-ghost.x-7, dy=cur[1]-ghost.y-6, d=Math.hypot(dx,dy)||1; const sp=24+Math.min(40,t*.1);
+      ghost.x+=dx/d*sp*dt; ghost.y+=dy/d*sp*dt+Math.sin(t*3)*.2; if(d<5) ghost.boo=.8;
+      sprite(GHOST,ghost.x,ghost.y,{'#':K,w:W},dx<0); } }
+  // doom clock
+  if(parts.has('doomclock')&&untilMs){ const left=Math.max(0,Math.ceil((untilMs-Date.now())/1000)); const str=`${Math.floor(left/60)}:${String(left%60).padStart(2,'0')}`;
+    const s=Math.max(4,Math.floor(LW/60)), ms=Date.now()%1000, bump=ms<120?1:0;
+    text(str,LW-tw(str,s+bump)-10,8,s+bump,row=>row<2?RED[4]:row<5?RED[3]:RED[2],true); }
+  requestAnimationFrame(frame);
+}
+layout(); setInterval(poll,33); poll(); requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

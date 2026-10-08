@@ -39,14 +39,25 @@ button{font:inherit; color:inherit}
 .shallow{box-shadow:inset 1px 1px var(--shadow), inset -1px -1px var(--hi)}
 
 #app{position:absolute; left:var(--ax); top:var(--ay); width:400px; box-sizing:border-box}
+/* Tray flyout: just the reels, the counters and Pull */
+body.mini #app{width:300px}
+body.mini .menubar, body.mini .tabs, body.mini .avatar, body.mini #sb-next, body.mini .arrow{display:none!important}
+body.mini .profile{grid-template-columns:1fr; padding:6px 6px 2px}
+body.mini .stats b{font-size:15px}
+body.mini .tb-btn[data-act="max"]::after{content:"⤢"}
+body.mini .tb-btn[data-act="max"]{font-size:0}
+body.mini .tb-btn[data-act="max"]::after{font-size:10px}
+.boons{font-size:12px; color:#2a6a2e; text-align:center}
 .win{padding:3px; display:flex; flex-direction:column; position:relative}
 .win.drop{animation:drop .6s steps(9)}
 @keyframes drop{0%{transform:translateY(-60px)} 45%{transform:translateY(8px)} 70%{transform:translateY(-4px)} 100%{transform:none}}
 .titlebar{display:flex; align-items:center; gap:4px; height:20px; padding:0 2px 0 3px; color:#fff; font-weight:700;
   background:linear-gradient(90deg,var(--navy),var(--title2))}
-.titlebar.flash1{background:linear-gradient(90deg,#1a3cb0,#7cc8ff)}
-.titlebar.flash2{background:linear-gradient(90deg,#55188c,#d27cff)}
-.titlebar.flash3{background:linear-gradient(90deg,#9a4c00,#ffd84a)}
+.titlebar.flash1{background:linear-gradient(90deg,#2a6a2e,#9cf09c)}
+.titlebar.flash2{background:linear-gradient(90deg,#1a3cb0,#7cc8ff)}
+.titlebar.flash3{background:linear-gradient(90deg,#55188c,#d27cff)}
+.titlebar.flash4{background:linear-gradient(90deg,#9a4c00,#ffd84a)}
+.titlebar.flash5{background:linear-gradient(90deg,#7a0a14,#ff5a5a)}
 .titlebar .ico{width:16px; height:16px; image-rendering:pixelated}
 .titlebar .ttl{flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; letter-spacing:.02em}
 .tb-btns{display:flex; gap:0}
@@ -204,6 +215,7 @@ button{font:inherit; color:inherit}
         <div><b id="st-pulls">0</b><span>pulls</span></div>
         <div><b id="st-pity">0/20</b><span>pity</span></div>
       </div>
+      <div class="boons" id="boons" hidden></div>
       <div class="pullrow">
         <button class="btn pull" id="pull" type="button">Pull <small>(1 ticket)</small></button>
         <div class="menu qa">
@@ -269,19 +281,23 @@ addEventListener('unhandledrejection',e=>report(e.reason&&e.reason.stack||e.reas
 /* ================= palette ================= */
 const RAMPS=[
   ['#1a1a22','#3c3c4a','#6e6e80','#a8a8ba','#e4e4ee'],   // common: slate
+  ['#0f2a12','#2a6a2e','#4fbf4f','#9cf09c','#e4ffe4'],   // uncommon: light green
   ['#0a1450','#1a3cb0','#2f80f0','#7cc8ff','#dcf4ff'],   // rare: cobalt
   ['#22083e','#55188c','#9a36d8','#d27cff','#f8dcff'],   // epic: violet
   ['#3e1a00','#9a4c00','#f0a020','#ffd84a','#fff8c8'],   // legendary: gold
+  ['#2a0006','#7a0a14','#d4142a','#ff5a5a','#ffd6d6'],   // mythic: red
+  ['#3a3420','#8a7a40','#e8d48a','#fff4c8','#ffffff'],   // blessing sparkle (not a tier)
 ];
+const HOLY=6;
 const REDR=['#3a0610','#8a1028','#d42a3a','#ff6a6a','#ffd0d0'];
 const DEEP='#07060f', K='#000000', W='#ffffff';
-const TEXTC=['#3c3c4a','#1a3cb0','#6a1aa8','#9a4c00'];
+const TEXTC=['#3c3c4a','#2a7a2e','#1a3cb0','#6a1aa8','#9a4c00','#b0101e'];
 const u32=h=>{const n=parseInt(h.slice(1),16); return ((255<<24)|((n&255)<<16)|(((n>>8)&255)<<8)|((n>>16)&255))>>>0;};
 const RAMPU=RAMPS.map(r=>r.map(u32)), DEEPU=u32(DEEP), BLACKU=u32(K), WHITEU=u32(W);
 const BAY=[0,8,2,10,12,4,14,6,3,11,1,9,15,7,13,5].map(v=>(v+.5)/16);
 
 /* ================= game data (owned by the Rust side) ================= */
-const TIERS=[{name:'COMMON',label:'Common'},{name:'RARE',label:'Rare'},{name:'EPIC',label:'Epic'},{name:'LEGENDARY',label:'Legendary'}];
+const TIERS=[{name:'COMMON',label:'Common'},{name:'UNCOMMON',label:'Uncommon'},{name:'RARE',label:'Rare'},{name:'EPIC',label:'Epic'},{name:'LEGENDARY',label:'Legendary'},{name:'MYTHIC',label:'Mythic'}];
 let CURSES=[], byId={}, snap=null;
 const fmtDur=s=>`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
 
@@ -348,23 +364,31 @@ const SPR_FN=[
     const starts=[2,6,10]; for(let i=0;i<3;i++){ const s=starts[i]; if(x>=s&&x<=s+2&&y>=5&&y<=9&&MINI['BAR'[i]][y-5][x-s]==='#') return '#f4f0e4'; }
     return y===4?'#8a8a9c':y===11?'#1a1a22':'#3c3c4a';
   },
-  // 2 gem
+  // 2 clover
+  (px,py)=>{
+    const C=RAMPS[1];
+    if(seg(px,py,8,8.5,11,14.6)<.65) return C[1];
+    for(const [cx,cy] of [[5.4,5.4],[10.6,5.4],[5.4,10.4],[10.6,10.4]]){ const dx=px-cx, dy=py-cy; if(Math.hypot(dx,dy)<2.9){
+      if(Math.hypot(px-(cx-.9),py-(cy-.9))<.8) return C[4]; return C[clamp(2+Math.round(-(dx+dy)/2.4),1,3)]; } }
+    return Math.hypot(px-8,py-8)<1.6?C[2]:null;
+  },
+  // 3 gem
   (px,py,x,y)=>{
-    const C=RAMPS[1]; if(y<3||y>14) return null;
+    const C=RAMPS[2]; if(y<3||y>14) return null;
     const hw=y<=6? 3+(y-3)*(4/3) : 7*(14.6-py)/8.6; const u=(px-8)/hw; if(Math.abs(u)>1) return null;
     if(x===5&&y===4) return W;
     if(y===3) return C[4];
     if(y<=6) return y===6?C[2]:(u<-.4?C[3]:u<.35?C[4]:C[2]);
     return u<-.45?C[3]:u<0?C[2]:u<.5?C[1]:C[0];
   },
-  // 3 star
+  // 4 star
   (()=>{ const P=[]; for(let k=0;k<10;k++){ const a=-Math.PI/2+k*Math.PI/5, r=k%2?3.2:7.1; P.push([8+Math.cos(a)*r, 8.7+Math.sin(a)*r]); }
-    return (px,py)=>{ if(!inPoly(px,py,P)) return null; const C=RAMPS[2], dx=px-8, dy=py-8.7;
+    return (px,py)=>{ if(!inPoly(px,py,P)) return null; const C=RAMPS[3], dx=px-8, dy=py-8.7;
       if(Math.abs(dx)<1&&Math.abs(dy+.5)<1) return C[4];
       return C[clamp(2+Math.round(-(dx*.8+dy*.6)/5*1.8),1,4)]; }; })(),
-  // 4 crown
+  // 5 crown
   (px,py,x,y)=>{
-    const C=RAMPS[3];
+    const C=RAMPS[4];
     if(y>=11&&y<=13&&x>=2&&x<=13){ if((x===4||x===11)&&y===12) return '#d42a3a'; if((x===7||x===8)&&y===12) return '#2f80f0'; return y===11?C[4]:y===13?C[1]:C[2]; }
     if(y>=8&&y<=10&&x>=2&&x<=13) return x<9?C[3]:C[2];
     if(Math.hypot(px-2.6,py-3.4)<1.1||Math.hypot(px-8,py-2.4)<1.1||Math.hypot(px-13.4,py-3.4)<1.1) return C[4];
@@ -372,8 +396,17 @@ const SPR_FN=[
     if(tri(2.6,3.6,1.8,6.4)||tri(8,2.8,5.4,10.6)||tri(13.4,3.6,9.6,14.2)) return px<8.5?C[3]:C[2];
     return null;
   },
+  // 6 seven (the jackpot)
+  (px,py,x,y)=>{
+    const C=RAMPS[5];
+    if(!inPoly(px,py,[[2.6,2],[13.6,2],[13.6,5],[8.6,14.6],[4.8,14.6],[9.6,5.4],[2.6,5.4]])) return null;
+    if(y===2) return C[4];
+    if(py<5.4) return x<5?C[4]:C[3];
+    const edge=px-(4.8+(14.6-py)*(4.8/9.2));
+    return edge<1.2?C[3]:C[2];
+  },
 ];
-const SYM_TIER=[0,0,1,2,3];
+const SYM_TIER=[0,0,1,2,3,4,5];
 const SPR=SPR_FN.map(f=>toCanvas(outline(grid(16,f))));
 const GHOST=SPR_FN.map(f=>toCanvas(outline(grid(16,f)).map(r=>r.map(v=>v?'#cfc8b6':null))));
 
@@ -382,7 +415,7 @@ const ICON=toCanvas(grid(16,(px,py,x,y)=>{
   if(x===14&&y>=3&&y<=8) return '#3c3c4a'; if(x===14&&y===2) return '#d42a3a';
   if(x<1||x>12||y<2||y>14) return null;
   if(x===1||x===12||y===2||y===14) return K;
-  if(y>=5&&y<=9&&x>=3&&x<=10){ if(x===5||x===8) return '#3c3c4a'; const c=x<5?0:x<8?1:2; return [REDR[2],RAMPS[3][3],RAMPS[1][2]][c]; }
+  if(y>=5&&y<=9&&x>=3&&x<=10){ if(x===5||x===8) return '#3c3c4a'; const c=x<5?0:x<8?1:2; return [REDR[2],RAMPS[4][3],RAMPS[2][2]][c]; }
   if(y===3) return '#ffd84a';
   return y>=11?'#9a4c00':'#c0c0c0';
 }));
@@ -438,18 +471,25 @@ const A={ ctx:null, on:true, master:null, nbuf:null, lastTick:0,
   fanfare(){ [523,659,784,1046,784,1046,1318].forEach((f,i)=>this.tone('square',f,f,i===6?.6:.12,.08,i*.11)); },
   error(){ this.tone('square',440,440,.12,.1); this.tone('square',311,311,.22,.1,.13); },
   beep(){ const f=rnd(300,1600); this.tone('square',f,f*rnd(.8,1.2),.09,.12); },
+  heart(){ this.tone('triangle',70,40,.18,.55); this.tone('triangle',62,36,.2,.45,.2); },
+  zap(){ this.noise(.12,.25,0,9000,2000); this.tone('square',1800,300,.1,.06); },
+  siren(dur){ const c=this.ctx; if(!c||!this.on) return; const t=c.currentTime; const o=c.createOscillator(), g=c.createGain(), l=c.createOscillator(), lg=c.createGain();
+    o.type='square'; o.frequency.value=700; l.frequency.value=2.2; lg.gain.value=220; l.connect(lg); lg.connect(o.frequency);
+    g.gain.setValueAtTime(.001,t); g.gain.exponentialRampToValueAtTime(.06,t+.3); g.gain.setValueAtTime(.06,t+dur-.3); g.gain.exponentialRampToValueAtTime(.001,t+dur);
+    o.connect(g); g.connect(this.master); o.start(t); l.start(t); o.stop(t+dur+.05); l.stop(t+dur+.05); },
+  bless(){ [523,659,784,1046,1318].forEach((f,i)=>this.tone('triangle',f,f,.35,.1,i*.07)); },
 };
 
 
 /* ================= world state ================= */
 const S={ T:0, hitstop:0, slowmo:0, ff:false, busy:false, phase:'idle', cur:null, trauma:0, glitch:0, wflash:0, wtier:0, force:-1, stopped:0,
-  ticker:{top:'PULL TO ROLL', topC:RAMPS[3][3], bot:'', botC:'#a8a8ba', next:0}, timeline:[], gen:0 };
+  ticker:{top:'PULL TO ROLL', topC:RAMPS[4][3], bot:'', botC:'#a8a8ba', next:0}, timeline:[], gen:0 };
 function at(delay,fn){ const g=S.gen; S.timeline.push({t:S.T+delay, fn:()=>{ if(S.gen===g) fn(); }}); }
 
 /* ================= reels ================= */
 const RW=120, RH=84, REEL_X=[12,45,78], REEL_Y=16, REEL_W=30, REEL_H=52, CY=42, PITCH=20, L=22;
-const SYM_W=[5,5,4,3,2];
-function wsym(){ let u=Math.random()*19; for(let i=0;i<5;i++){ u-=SYM_W[i]; if(u<=0) return i; } return 0; }
+const SYM_W=[5,5,4,4,3,2,1], SYM_SUM=SYM_W.reduce((a,b)=>a+b);
+function wsym(){ let u=Math.random()*SYM_SUM; for(let i=0;i<SYM_W.length;i++){ u-=SYM_W[i]; if(u<=0) return i; } return 0; }
 const mod=n=>((n%L)+L)%L;
 const reels=[0,1,2].map(()=>({strip:Array.from({length:L},wsym), p:ri(0,L-1), v:0, vmax:20, vslow:6, mode:'idle', from:0, to:0, t:0, dur:1, back:1.4, cb:null, lastF:0}));
 const easeOutBack=(k,s)=>{ const c=s+1; return 1+c*Math.pow(k-1,3)+s*Math.pow(k-1,2); };
@@ -518,7 +558,7 @@ function drawWell(rt){
   for (const p of WP){ const k=clamp(Math.floor((1-p.age/p.life)*5),0,4); wg.fillStyle=RAMPS[p.tier][k]; wg.fillRect(Math.round(p.x),Math.round(p.y),p.s,p.s); }
   // glitch tear
   if(S.glitch>0){ for(let i=0;i<4;i++){ const y=ri(10,74), h=ri(1,4), dx=ri(-8,8); wg.drawImage(rc,0,y,RW,h,dx,y,RW,h); }
-    if(Math.random()<.5){ wg.fillStyle=pick([RAMPS[2][3],RAMPS[1][3],W]); wg.fillRect(0,ri(14,70),RW,1); } }
+    if(Math.random()<.5){ wg.fillStyle=pick([RAMPS[3][3],RAMPS[2][3],W]); wg.fillRect(0,ri(14,70),RW,1); } }
 }
 function updWell(dt){
   for (let i=WP.length-1;i>=0;i--){ const p=WP[i]; p.age+=dt; if(p.age>=p.life){ WP.splice(i,1); continue; } p.vy+=p.g*dt; p.vx*=.985; p.x+=p.vx*dt; p.y+=p.vy*dt; }
@@ -529,8 +569,9 @@ function wellBurst(tier,n){ for(let i=0;i<n;i++){ const a=rnd(0,TAU), sp=rnd(20,
 /* ================= FX overlay ================= */
 const fxc=$('fx'), fx=fxc.getContext('2d'), blc=$('bloom'), bl=blc.getContext('2d');
 let SC=3, FW=0, FH=0, IMG=null, BUF=null, ANG=null, DIST=null;
-const O={ dim:0,dimT:0, black:0,blackT:0, rays:0,raysT:0, glow:0,glowT:0, flash:0, orb:0,orbT:0, orbR:6, rot:0, scale:1, tier:3, nRays:14,
-  cx:0, cy:0, spot:null, title:null, sub:null, counter:null, P:[], stars:[], active:false, warp:0 };
+const O={ dim:0,dimT:0, black:0,blackT:0, rays:0,raysT:0, rays2:0,rays2T:0, glow:0,glowT:0, flash:0, orb:0,orbT:0, orbR:6, rot:0, scale:1, tier:3, nRays:14,
+  cx:0, cy:0, spot:null, title:null, sub:null, counter:null, P:[], stars:[], active:false, warp:0,
+  bg:DEEPU, vig:0, glitch:0, tiles:[], snap:null, bolts:[] };
 function layoutFX(){
   // A hidden or minimized window can report 0x0; keep the canvases valid anyway.
   SC=innerWidth>=900?3:2; FW=Math.max(1,Math.ceil(innerWidth/SC)); FH=Math.max(1,Math.ceil(innerHeight/SC));
@@ -545,20 +586,24 @@ function setCenter(cx,cy){ O.cx=cx; O.cy=cy; let i=0;
   for(let y=0;y<FH;y++) for(let x=0;x<FW;x++,i++){ const dx=x-cx, dy=y-cy; ANG[i]=(Math.atan2(dy,dx)/TAU+1)%1; DIST[i]=Math.sqrt(dx*dx+dy*dy); } }
 function wellCenter(){ const b=rc.getBoundingClientRect(); return {x:(b.left+b.width/2)/SC, y:(b.top+b.height/2)/SC, r:{x0:b.left/SC,y0:b.top/SC,x1:b.right/SC,y1:b.bottom/SC}}; }
 function backdrop(){
-  const need=O.dim>.004||O.black>.004||O.rays>.004||O.glow>.004||O.flash>.004||O.orb>.004;
+  const need=O.dim>.004||O.black>.004||O.rays>.004||O.rays2>.004||O.glow>.004||O.flash>.004||O.orb>.004;
   if(!need) return false;
   const ramp=RAMPU[O.tier], N=O.nRays, rot=O.rot, R=Math.hypot(FW,FH)*.62*O.scale, G=Math.min(FW,FH)*.34, orbR=O.orbR;
-  const sp=O.spot, rays=O.rays, glow=O.glow, orb=O.orb, flash=O.flash, black=O.black, dim=O.dim;
-  const lit=rays>.004||glow>.004||orb>.004;
+  const sp=O.spot, rays=O.rays, rays2=O.rays2, glow=O.glow, orb=O.orb, flash=O.flash, black=O.black, dim=O.dim, vig=O.vig, bg=O.bg;
+  const lit=rays>.004||rays2>.004||glow>.004||orb>.004, maxd=Math.hypot(FW,FH)/2;
   for(let y=0,i=0;y<FH;y++){ const by=(y&3)<<2; const inY=sp&&y>=sp.y0&&y<sp.y1;
     for(let x=0;x<FW;x++,i++){ const th=BAY[by|(x&3)];
       if(flash>th){ BUF[i]=WHITEU; continue; }
       if(lit){ let v=0; const d=DIST[i];
         if(rays>.004){ let ph=ANG[i]*N+rot; ph-=Math.floor(ph); if(ph<.2){ const f=1-d/R; if(f>0) v+=rays*(.12+1.05*f*f); } }
+        if(rays2>.004){ let ph=ANG[i]*(N+5)-rot*1.7; ph-=Math.floor(ph); if(ph<.1){ const f=1-d/R; if(f>0) v+=rays2*(.1+.9*f*f); } }
         if(glow>.004){ const f=1-d/G; if(f>0) v+=glow*f*f*1.6; }
         if(orb>.004&&d<orbR) v+=orb*(1.3-d/orbR);
         if(v>0){ let k=Math.floor(v*5+th-.5); if(k>=1){ BUF[i]=ramp[k>4?4:k]; continue; } } }
-      if(black>th){ BUF[i]=DEEPU; continue; }
+      if(black>th){
+        // Heartbeat: a dithered vignette that throbs in from the edges.
+        if(vig>.004){ const k=(DIST[i]/maxd-.42)*2.4*vig; if(k>th){ BUF[i]=k>.62+th*.4?ramp[2]:ramp[1]; continue; } }
+        BUF[i]=bg; continue; }
       if(dim>th && !(inY&&x>=sp.x0&&x<sp.x1)){ BUF[i]=BLACKU; continue; }
       BUF[i]=0; } }
   fx.putImageData(IMG,0,0); return true;
@@ -578,7 +623,14 @@ function circle(cx,cy,r,c){ fx.fillStyle=c; const n=Math.max(12,Math.floor(r*4))
 function updFX(dt,rdt){
   const ap=(v,t,rate)=>v+(t-v)*Math.min(1,rate*rdt);
   O.dim=ap(O.dim,O.dimT,5); O.black=ap(O.black,O.blackT,3.2); O.rays=ap(O.rays,O.raysT,4); O.glow=ap(O.glow,O.glowT,4); O.orb=ap(O.orb,O.orbT,3);
+  O.rays2=ap(O.rays2,O.rays2T,4); O.vig=Math.max(0,O.vig-rdt*1.8); if(O.glitch>0) O.glitch-=rdt;
   O.scale=ap(O.scale,1,5); if(O.flash>0) O.flash=Math.max(0,O.flash-rdt*3.2); O.rot+=dt*.12;
+  for(const t of O.tiles){ if(t.delay>0){ t.delay-=dt; continue; }
+    if(t.mode==='crack'){ t.x=t.hx+ri(-1,1); t.y=t.hy+ri(-1,1); }
+    else if(t.mode==='suck'){ const dx=O.cx-t.x-4, dy=O.cy-t.y-4, d=Math.hypot(dx,dy)||1; t.v+=dt*420; t.x+=dx/d*t.v*dt; t.y+=dy/d*t.v*dt;
+      if(d<6){ t.mode='gone'; O.orbR=Math.min(O.orbR+.08,30); } }
+    else if(t.mode==='home'){ t.k=Math.min(1,t.k+dt*1.8); const e=easeOutBack(t.k,1.2); t.x=t.fx+(t.hx-t.fx)*e; t.y=t.fy+(t.hy-t.fy)*e; } }
+  for(let i=O.bolts.length-1;i>=0;i--){ const b=O.bolts[i]; b.age+=rdt; if(b.age>b.life) O.bolts.splice(i,1); }
   for(let i=O.P.length-1;i>=0;i--){ const p=O.P[i]; p.age+=dt; if(p.age>=p.life){ O.P.splice(i,1); continue; } if(p.age<0) continue;
     if(p.k==='s'){ p.vy+=p.g*dt; p.vx*=.99; p.x+=p.vx*dt; p.y+=p.vy*dt; }
     else if(p.k==='r'){ p.r+=p.vr*dt; p.vr*=.985; }
@@ -592,6 +644,8 @@ function drawFX(rt){
   const drew=backdrop(); if(!drew) fx.clearRect(0,0,FW,FH);
   let any=drew;
   const R=RAMPS[O.tier];
+  if(O.snap&&O.tiles.length){ any=true; for(const t of O.tiles) if(t.mode!=='gone') fx.drawImage(O.snap,t.sx,t.sy,8,8,Math.round(t.x),Math.round(t.y),8,8); }
+  for(const b of O.bolts){ any=true; const c=Math.floor(b.age*30)%2?W:R[3]; for(let i=1;i<b.pts.length;i++) line(b.pts[i-1][0],b.pts[i-1][1],b.pts[i][0],b.pts[i][1],c); }
   if(O.stars.length&&O.black>.3){ any=true; for(const s of O.stars){ const b=(Math.sin(s.ph)+1)/2;
     if(O.warp>0&&s.px!=null){ line(s.px,s.py,s.x,s.y,b>.5?W:R[3]); }
     else{ fx.fillStyle=b>.85?W:b>.5?R[3]:R[1]; fx.fillRect(s.x|0,s.y|0,1,1); if(b>.92){ fx.fillRect((s.x|0)-1,s.y|0,3,1); fx.fillRect(s.x|0,(s.y|0)-1,1,3); } } } }
@@ -610,17 +664,43 @@ function drawFX(rt){
       for(let i=0;i<ln.length;i++,n++){ const lt=t.t0+n*t.step; if(T<lt) return; const age=T-lt;
         const drop=age<.1?Math.round(-(1-age/.1)*6*fs):0; const ch=ln[i]; if(ch===' ') continue;
         const col=age<.05?W:(row=>R[[4,4,3,3,2,2,1][row]]);
+        // Mythic titles split into red and cyan ghosts that jitter apart.
+        if(t.chroma&&age>.05){ const sx=Math.max(1,Math.round(fs*(.6+S.trauma*1.5)));
+          drawText(fx,ch,x0+i*6*fs+ox-sx,y0+drop+oy,fs,'#ff2a4a'); drawText(fx,ch,x0+i*6*fs+ox+sx,y0+drop+oy,fs,'#2ae8ff'); }
         drawTextOutlined(fx,ch,x0+i*6*fs+ox,y0+drop+oy,fs,col); } }); }
   if(O.sub&&T>=O.sub.t0){ any=true; const s=O.sub, fs=s.fs; const x0=Math.round(s.cx-textW(s.text,fs)/2);
     drawTextOutlined(fx,s.text,x0,Math.round(s.cy),fs,s.col||(row=>row<3?W:R[3])); }
   if(O.counter){ any=true; const c=O.counter, txt=`1 IN ${c.n}`, fs=c.fs; drawTextOutlined(fx,txt,Math.round(O.cx-textW(txt,fs)/2),Math.round(c.y),fs,row=>row<3?W:R[3]); }
+  // Tearing: shift random horizontal slices of the frame sideways.
+  if(O.glitch>0&&any){ for(let i=0;i<6;i++){ const y=ri(0,FH-8), h=ri(2,10), dx=ri(-14,14); fx.drawImage(fxc,0,y,FW,h,dx,y,FW,h); } }
   O.active=any;
   if(any){ blc.hidden=false; bl.clearRect(0,0,FW,FH); bl.drawImage(fxc,0,0); } else if(!blc.hidden){ bl.clearRect(0,0,FW,FH); blc.hidden=true; }
 }
 function trauma(v){ S.trauma=Math.min(1,S.trauma+v); }
+// A jagged bolt from a random screen edge to (tx,ty).
+function bolt(tx,ty,life=.3){ const e=ri(0,3); let x=e===0?rnd(0,FW):e===1?FW:e===2?rnd(0,FW):0, y=e===0?0:e===1?rnd(0,FH):e===2?FH:rnd(0,FH);
+  const pts=[[x,y]], n=14; for(let i=1;i<=n;i++){ const k=i/n; pts.push([x+(tx-x)*k+(i<n?rnd(-10,10):0), y+(ty-y)*k+(i<n?rnd(-10,10):0)]); }
+  O.bolts.push({pts,age:0,life}); }
+// A pixel stand-in for the app window (grey face, navy title bar, the live reels), cut into 8x8 tiles that can fly apart.
+function shatterWindow(){
+  const b=ui.app.getBoundingClientRect(), x0=Math.round(b.left/SC), y0=Math.round(b.top/SC), w=Math.ceil(b.width/SC), h=Math.ceil(b.height/SC);
+  const c=document.createElement('canvas'); c.width=w; c.height=h; const g=c.getContext('2d'); g.imageSmoothingEnabled=false;
+  g.fillStyle='#c0c0c0'; g.fillRect(0,0,w,h); g.fillStyle=W; g.fillRect(0,0,w,1); g.fillRect(0,0,1,h); g.fillStyle='#000'; g.fillRect(0,h-1,w,1); g.fillRect(w-1,0,1,h);
+  const tb=Math.max(4,Math.round(22/SC)); for(let x=1;x<w-1;x++){ g.fillStyle=x/w<.5?'#000080':'#1084d0'; g.fillRect(x,1,1,tb); }
+  const wb=rc.getBoundingClientRect(); g.fillStyle='#000'; g.fillRect(Math.round(wb.left/SC)-x0,Math.round(wb.top/SC)-y0,Math.round(wb.width/SC),Math.round(wb.height/SC));
+  g.drawImage(rc,Math.round(wb.left/SC)-x0,Math.round(wb.top/SC)-y0,Math.round(wb.width/SC),Math.round(wb.height/SC));
+  const pb=ui.pull.getBoundingClientRect(); g.fillStyle='#dfdfdf'; g.fillRect(Math.round(pb.left/SC)-x0,Math.round(pb.top/SC)-y0,Math.round(pb.width/SC),Math.max(2,Math.round(pb.height/SC)));
+  O.snap=c; O.tiles=[];
+  for(let ty=0;ty<h;ty+=8) for(let tx=0;tx<w;tx+=8) O.tiles.push({sx:tx,sy:ty,hx:x0+tx,hy:y0+ty,x:x0+tx,y:y0+ty,v:0,k:0,fx:0,fy:0,delay:0,mode:'crack'});
+  ui.app.style.visibility='hidden';
+}
+function suckTiles(){ for(const t of O.tiles){ t.mode='suck'; t.v=rnd(10,60); t.delay=rnd(0,.7); } }
+function reassemble(){ for(const t of O.tiles){ const a=rnd(0,TAU), r=rnd(40,Math.max(FW,FH)*.5); t.fx=O.cx+Math.cos(a)*r; t.fy=O.cy+Math.sin(a)*r;
+  t.x=t.fx; t.y=t.fy; t.k=0; t.delay=rnd(0,.25); t.mode='home'; } }
+function clearTiles(){ O.tiles=[]; O.snap=null; ui.app.style.visibility=''; }
 
 /* ================= window: grow over the monitor for big reveals ================= */
-const ui={ pull:$('pull'), msg:$('sb-msg'), next:$('sb-next'), curseBox:$('sb-curse'), curseT:$('sb-curse-t'), live:$('live'), app:$('app') };
+const ui={ pull:$('pull'), msg:$('sb-msg'), next:$('sb-next'), curseBox:$('sb-curse'), curseT:$('sb-curse-t'), live:$('live'), app:$('app'), boons:$('boons') };
 let expanded=false, winBusy=Promise.resolve();
 function placeApp(x,y){ document.documentElement.style.setProperty('--ax',Math.round(x)+'px'); document.documentElement.style.setProperty('--ay',Math.round(y)+'px'); }
 // Both steps hide the chrome for a couple of frames so it never visibly jumps while the window resizes.
@@ -630,7 +710,7 @@ function expand(){ if(expanded) return winBusy; expanded=true; winBusy=winBusy.t
   await nextFrame(); layoutFX(); ui.app.style.visibility=''; }); return winBusy; }
 function collapse(){ if(!expanded) return winBusy; expanded=false; winBusy=winBusy.then(async()=>{
   ui.app.style.visibility='hidden'; ui.app.style.transform=''; placeApp(0,0); await nextFrame();
-  try{ await invoke('fx_restore'); }catch(e){ console.error(e); }
+  try{ await invoke('fx_restore',{onTop:mode==='mini'}); }catch(e){ console.error(e); }
   await nextFrame(); layoutFX(); ui.app.style.visibility=''; }); return winBusy; }
 
 /* ================= UI ================= */
@@ -638,17 +718,29 @@ const av=$('avatar').getContext('2d'); av.imageSmoothingEnabled=false;
 function drawAvatar(sym){ av.fillStyle=K; av.fillRect(0,0,32,32);
   for(let y=0;y<32;y++) for(let x=0;x<32;x++){ const d=Math.hypot(x-15.5,y-15.5)/16; if(BAY[((y&3)<<2)|(x&3)]<(1-d)*.5){ av.fillStyle=sym==null?'#1a1a22':RAMPS[SYM_TIER[sym]][1]; av.fillRect(x,y,1,1); } }
   av.drawImage(sym==null?ICON:SPR[sym],8,8); }
-const SYM_OF_TIER=[0,2,3,4];
+// The reel symbol that stands for each tier (Common shows the cherry).
+const SYM_OF_TIER=[0,2,3,4,5,6];
 // The marquee fits 20 characters; long names drop the prefix.
 const lastLabel=n=>(`LAST: ${n}`.length<=20?`LAST: ${n}`:n).toUpperCase();
+let mode='full', lastAnchor=null;
 function applySnap(s){
   snap=s; CURSES=s.catalog; byId=Object.fromEntries(CURSES.map(c=>[c.id,c]));
   document.body.classList.toggle('qa',!!s.qa);
   A.setOn(s.sound); document.querySelector('[data-act="sound"]').setAttribute('aria-checked',String(s.sound));
   refresh();
 }
+function boonsText(){
+  const b=snap.boons, out=[], pl=(n,w)=>`${n} ${w}${n>1?'s':''}`;
+  if(b.immuneUntilMs>Date.now()) out.push(`Immune ${fmtDur(Math.ceil((b.immuneUntilMs-Date.now())/1000))}`);
+  if(b.shields) out.push(pl(b.shields,'shield'));
+  if(b.freePulls) out.push(pl(b.freePulls,'free pull'));
+  if(b.luckPulls) out.push(`Lucky ×${b.luckPulls}`);
+  if(b.midas) out.push(`Midas ×${b.midas}`);
+  return out.join(' · ');
+}
 function refreshCounters(){
   $('st-tickets').textContent=snap.tickets; $('st-pity').textContent=`${snap.pity}/${snap.pityThreshold}`;
+  ui.pull.innerHTML=snap.boons.freePulls>0?'Pull <small>(free)</small>':'Pull <small>(1 ticket)</small>';
   ui.pull.disabled=S.busy;
   tickClock();
 }
@@ -662,16 +754,18 @@ function refresh(){
   for(const r of snap.history){ const c=byId[r.id]; if(!c) continue; const d=new Date(r.t);
     const row=document.createElement('div'); row.className='row';
     row.innerHTML=`<span class="when">${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}</span><span></span><span class="odds">1 in ${c.oneIn}</span>`;
-    const n=row.children[1]; n.textContent=c.name; n.style.color=TEXTC[c.tier]; if(c.tier>=2) n.style.fontWeight='700';
-    n.title=TIERS[c.tier].label; h.append(row); }
+    const n=row.children[1]; n.textContent=(c.kind==='blessing'?'+ ':'')+c.name; n.style.color=TEXTC[c.tier]; if(c.tier>=3) n.style.fontWeight='700';
+    n.title=`${TIERS[c.tier].label} ${c.kind}`; h.append(row); }
   const sl=$('statlist'); sl.textContent='';
-  const kv=[['Total pulls',snap.pulls],['Common',snap.counts[0]],['Rare',snap.counts[1]],['Epic',snap.counts[2]],['Legendary',snap.counts[3]],
-    ['Pity',`${snap.pity} of ${snap.pityThreshold}`],['Personal best',snap.best<0?'None yet':`${snap.bestName} (${TIERS[snap.best].label})`]];
+  const kv=[['Total pulls',snap.pulls],...TIERS.map((t,i)=>[t.label,snap.counts[i]||0]),
+    ['Epic pity',`${snap.pity} of ${snap.pityThreshold}`],['Legendary pity',`${snap.pityLegend} of ${snap.pityLegendThreshold}`],
+    ['Personal best',snap.best<0?'None yet':`${snap.bestName} (${TIERS[snap.best].label})`],['Blessings',boonsText()||'None']];
   for(const [k,v] of kv){ const dt=document.createElement('dt'), dd=document.createElement('dd'); dt.textContent=k; dd.textContent=v; sl.append(dt,dd); }
   const tb=$('odds'); tb.textContent='';
   for(const c of CURSES){ const tr=document.createElement('tr');
-    tr.innerHTML=`<td></td><td></td><td class="r">1 in ${c.oneIn}</td><td class="r">${fmtDur(c.secs)}</td>`;
-    tr.children[0].textContent=c.name; tr.children[1].textContent=TIERS[c.tier].label; tr.children[1].style.color=TEXTC[c.tier]; tb.append(tr); }
+    tr.innerHTML=`<td></td><td></td><td class="r">1 in ${c.oneIn}</td><td class="r"></td>`;
+    tr.children[0].textContent=(c.kind==='blessing'?'+ ':'')+c.name; tr.children[1].textContent=TIERS[c.tier].label; tr.children[1].style.color=TEXTC[c.tier];
+    tr.children[3].textContent=c.kind==='blessing'?'Blessing':fmtDur(c.secs); tb.append(tr); }
   if(S.phase==='idle'){ S.ticker.bot=last&&byId[last.id]?lastLabel(byId[last.id].name):`PITY ${snap.pity}/${snap.pityThreshold}`; S.ticker.botC='#6e6e80'; }
 }
 let reloading=false;
@@ -683,6 +777,7 @@ function tickClock(){
   const a=snap.active, c=a&&byId[a.id];
   ui.curseBox.hidden=!c;
   if(c){ const left=Math.max(0,Math.ceil((a.untilMs-Date.now())/1000)); ui.curseT.textContent=`${c.name} ${fmtDur(left)}`; }
+  const bt=boonsText(); ui.boons.textContent=bt; ui.boons.hidden=!bt;
 }
 function selectTab(id){ for(const t of ['slots','history','chances','stats']){ const on=t===id; $('tab-'+t).setAttribute('aria-selected',String(on)); $('panel-'+t).hidden=!on; } }
 for(const t of ['slots','history','chances','stats']) $('tab-'+t).addEventListener('click',()=>selectTab(t));
@@ -701,7 +796,7 @@ document.querySelectorAll('.menu > button').forEach(b=>{
 document.addEventListener('click',e=>{ if(openMenu&&!e.target.closest('.dropdown')) closeMenus(); });
 function setForce(v){ S.force=v; document.querySelectorAll('[data-force]').forEach(b=>b.setAttribute('aria-checked',String(+b.dataset.force===v))); }
 function setStatus(t){ ui.msg.textContent=t; }
-const about=()=>dialog({title:'About gachaos',icon:'info',html:`<p><b>gachaos</b> 0.2</p><p>Spend a ticket, spin three reels, and get cursed. Rarer rolls get louder.</p><p class="meta">Every curse undoes itself. Ctrl+Alt+P undoes all of them at once, even from the tray.</p>`});
+const about=()=>dialog({title:'About gachaos',icon:'info',html:`<p><b>gachaos</b> 0.3</p><p>Spend a ticket, spin three reels, and get cursed or blessed. Rarer rolls get louder.</p><p class="meta">Every curse undoes itself. Ctrl+Alt+P undoes all of them at once, even from the tray.</p>`});
 document.addEventListener('click',async e=>{
   const b=e.target.closest('[data-act],[data-force],[data-tab]'); if(!b) return;
   if(b.dataset.force!=null){ setForce(+b.dataset.force); closeMenus(); A.blip(); setStatus(S.force<0?'Next roll: random':`Next roll forced: ${TIERS[S.force].label}`); return; }
@@ -713,12 +808,37 @@ document.addEventListener('click',async e=>{
   else if(a==='refill'){ applySnap(await invoke('qa_refill')); setStatus('Tickets refilled'); }
   else if(a==='reset'){ applySnap(await invoke('qa_reset')); setStatus('Save reset'); }
   else if(a==='about') about();
-  else if(a==='close') invoke('hide_to_tray');
+  else if(a==='close') closeFlow();
   else if(a==='exit') invoke('quit');
   else if(a==='min') TAURI.window.getCurrentWindow().minimize();
-  else if(a==='max') A.blip();
+  else if(a==='max'){ if(mode==='mini') setMode('full'); else A.blip(); }
 });
-async function cureAll(){ const had=snap&&snap.active; applySnap(await invoke('cure_all')); if(had){ setStatus(`Cured: ${byId[had.id].name}`); A.ding(); } else setStatus('Nothing to cure'); }
+async function cureAll(){ const had=snap&&snap.active; applySnap(await invoke('cure_all')); if(had&&byId[had.id]){ setStatus(`Cured: ${byId[had.id].name}`); A.ding(); } else setStatus('Nothing to cure'); }
+
+// Closing the window keeps gachaos in the tray. With a curse running, ask first:
+// otherwise the curse keeps going with no window in sight.
+function closeFlow(){
+  closeMenus();
+  if(S.busy) return;
+  const a=snap&&snap.active, c=a&&byId[a.id];
+  if(mode==='mini'||!c){ invoke('hide_to_tray'); return; }
+  const left=Math.max(0,Math.ceil((a.untilMs-Date.now())/1000));
+  const d=dialog({title:'Close gachaos?',icon:'warn',
+    html:`<p><b></b> is still active, with <span class="left"></span> left.</p><p class="meta">If you keep it, gachaos waits in the tray until it wears off. Ctrl+Alt+P cures it any time.</p>`,
+    buttons:[{label:'Cure and close',fn:async()=>{ await cureAll(); invoke('hide_to_tray'); }},{label:'Keep it',fn:()=>invoke('hide_to_tray')}]});
+  d.querySelector('.msg b').textContent=c.name; d.querySelector('.left').textContent=fmtDur(left);
+}
+
+// Full window, or the compact flyout that opens from the tray icon.
+async function setMode(m,anchor){
+  if(S.busy||expanded) return;
+  mode=m; if(anchor) lastAnchor=anchor;
+  document.body.classList.toggle('mini',m==='mini'); closeMenus(); if(m==='mini') selectTab('slots');
+  await nextFrame(); layoutFX(); await nextFrame();
+  const b=ui.app.getBoundingClientRect();
+  await invoke('fit_window',{w:Math.ceil(b.width),h:Math.ceil(b.height),anchor:m==='mini'?(anchor||lastAnchor):null});
+  layoutFX();
+}
 
 // dialogs
 function dialog({title,icon,html,buttons}){
@@ -741,13 +861,14 @@ addEventListener('keydown',e=>{
 });
 
 /* ================= roll flow ================= */
+// Common never shows a triple; every other tier shows three of its symbol.
 function plan(tier){
   let a,b,c;
-  if(tier===0){ if(Math.random()<.35){ a=b=ri(2,4); do c=wsym(); while(c===a); } else { do{ a=wsym(); b=wsym(); c=wsym(); } while(a===b&&b===c); } }
+  if(tier===0){ if(Math.random()<.35){ a=b=ri(2,6); do c=wsym(); while(c===a); } else { do{ a=wsym(); b=wsym(); c=wsym(); } while(a===b&&b===c); } }
   else a=b=c=tier+1;
   const pairTier=a===b?SYM_TIER[a]:-1;
-  const fake=tier>=2&&Math.random()<.4;
-  return {s:[a,b,c], pairTier, tension:pairTier<0?0:[.3,.5,.8,1.15][pairTier], fake};
+  const fake=tier>=3&&Math.random()<.4;
+  return {s:[a,b,c], pairTier, tension:pairTier<0?0:[.3,.4,.55,.8,1.1,1.6][pairTier], fake};
 }
 async function pull(){
   if(S.busy) return; A.init(); closeMenus();
@@ -759,20 +880,20 @@ async function pull(){
     else dialog({title:'gachaos',icon:'error',html:`<p>The pull failed.</p><p class="meta"></p>`}).querySelector('.meta').textContent=String(e);
     return; }
   snap=r.state; refreshCounters();
-  const c=byId[r.curseId], tier=r.tier, pl=plan(tier);
-  S.gen++; S.timeline=[]; S.cur={c,tier,pl,forced:r.forcedByPity}; S.phase='spin'; S.wtier=Math.max(0,pl.pairTier); S.ff=false; S.stopped=0;
-  selectTab('slots'); setStatus(r.forcedByPity?'Pity! Rolling...':'Rolling...'); $('dlglayer').textContent='';
+  const c=byId[r.id], tier=r.tier, pl=plan(tier);
+  S.gen++; S.timeline=[]; S.cur={c,tier,pl,forced:r.forcedByPity,bless:c.kind==='blessing'}; S.phase='spin'; S.wtier=Math.max(0,pl.pairTier); S.ff=false; S.stopped=0;
+  selectTab('slots'); setStatus(r.forcedByPity?'Pity! Rolling...':r.free?'Free pull! Rolling...':'Rolling...'); $('dlglayer').textContent='';
   A.lever(); reels.forEach((rl,i)=>{ rl.mode='spin'; rl.v=-5; rl.vmax=22+i*1.6; });
   S.ticker.next=0;
   at(.55,()=>stopReel(reels[0],pl.s[0],.4,()=>S.stopped=1));
   at(.8,()=>stopReel(reels[1],pl.s[1],.4,()=>{ S.stopped=2; if(pl.pairTier>=0) beginTension(); }));
   at(1.05,()=>{ const rl=reels[2], first=pl.fake?pl.s[2]-1:pl.s[2], next=pl.fake?pl.s[2]:null;
-    if(pl.tension>0){ rl.mode='slow'; rl.vslow=pl.pairTier>=2?5:7; at(pl.tension,()=>stopReel(rl,first,.7,onFinal,next)); }
+    if(pl.tension>0){ rl.mode='slow'; rl.vslow=pl.pairTier>=3?5:7; at(pl.tension,()=>stopReel(rl,first,.7,onFinal,next)); }
     else stopReel(rl,first,.45,onFinal,next); });
 }
-async function beginTension(){ const pl=S.cur.pl; S.phase='tension'; S.wtier=pl.pairTier; A.tension(pl.pairTier,pl.tension+.3);
-  if(pl.pairTier>=2){ await expand(); if(S.phase!=='tension') return; const w=wellCenter();
-    O.spot={x0:Math.floor(w.r.x0),y0:Math.floor(w.r.y0),x1:Math.ceil(w.r.x1),y1:Math.ceil(w.r.y1)}; O.dimT=pl.pairTier===3?.62:.4; trauma(.15); } }
+async function beginTension(){ const pl=S.cur.pl; S.phase='tension'; S.wtier=pl.pairTier; A.tension(Math.min(4,pl.pairTier),pl.tension+.3);
+  if(pl.pairTier>=3){ await expand(); if(S.phase!=='tension') return; const w=wellCenter();
+    O.spot={x0:Math.floor(w.r.x0),y0:Math.floor(w.r.y0),x1:Math.ceil(w.r.x1),y1:Math.ceil(w.r.y1)}; O.dimT=pl.pairTier>=4?.62:.4; trauma(.15); } }
 function onFinal(){
   S.stopped=3; const {pl}=S.cur;
   if(pl.fake){ S.phase='fake'; S.ticker={...S.ticker, top:'SO CLOSE...', topC:'#a8a8ba', bot:'', next:Infinity};
@@ -780,15 +901,20 @@ function onFinal(){
       at(.25,()=>{ const r=reels[2]; Object.assign(r,{from:r.p,to:r.p+1,t:0,dur:.3,back:2.6,mode:'stop',cb:reveal}); }); });
   } else reveal();
 }
-function landTicker(){ const {c}=S.cur; const t=TIERS[c.tier]; S.ticker={top:`${t.name}  1 IN ${c.oneIn}`, topC:RAMPS[c.tier][3], bot:c.name.toUpperCase(), botC:W, next:Infinity}; }
+function landTicker(){ const {c,bless}=S.cur; const t=TIERS[c.tier];
+  S.ticker={top:`${t.name}  1 IN ${c.oneIn}`, topC:RAMPS[c.tier][3], bot:(bless?'+ ':'')+c.name.toUpperCase(), botC:bless?RAMPS[HOLY][3]:W, next:Infinity}; }
+function holyBurst(){ if(!S.cur.bless) return; wellBurst(HOLY,50); A.bless(); }
 function reveal(){
-  const {c,tier}=S.cur; S.phase='result'; S.wtier=tier; landTicker(); ui.live.textContent=`${TIERS[tier].label}: ${c.name}, 1 in ${c.oneIn}`;
-  if(tier===0){ S.wflash=.25; A.ding(); O.dimT=0; at(.35,finish); return; }
-  if(tier===1){ S.hitstop=.08; S.wflash=.4; A.chime(); wellBurst(1,90); titleFlash(1); O.dimT=0;
-    const w=wellCenter(); for(let i=0;i<14;i++){ const a=rnd(-Math.PI,0); O.P.push({k:'s',x:w.x+rnd(-20,20),y:w.r.y0+2,vx:Math.cos(a)*rnd(40,90),vy:Math.sin(a)*rnd(40,110),g:120,age:0,life:rnd(.6,1.1),tier:1,s:1}); }
+  const {c,tier}=S.cur; S.phase='result'; S.wtier=tier; landTicker();
+  ui.live.textContent=`${TIERS[tier].label} ${c.kind}: ${c.name}, 1 in ${c.oneIn}`;
+  if(tier===0){ S.wflash=.25; A.ding(); O.dimT=0; holyBurst(); at(.35,finish); return; }
+  if(tier===1){ S.hitstop=.05; S.wflash=.3; A.ding(); A.chime(); wellBurst(1,60); titleFlash(1); O.dimT=0; holyBurst(); at(.6,finish); return; }
+  if(tier===2){ S.hitstop=.08; S.wflash=.4; A.chime(); wellBurst(2,90); titleFlash(2); O.dimT=0; holyBurst();
+    const w=wellCenter(); for(let i=0;i<14;i++){ const a=rnd(-Math.PI,0); O.P.push({k:'s',x:w.x+rnd(-20,20),y:w.r.y0+2,vx:Math.cos(a)*rnd(40,90),vy:Math.sin(a)*rnd(40,110),g:120,age:0,life:rnd(.6,1.1),tier:2,s:1}); }
     at(.75,finish); return; }
-  if(tier===2) return revealEpic();
-  revealLegend();
+  if(tier===3) return revealEpic();
+  if(tier===4) return revealLegend();
+  revealMythic();
 }
 function titleFlash(t){ const tb=$('titlebar'); tb.classList.add('flash'+t); setTimeout(()=>tb.classList.remove('flash'+t),700); }
 function fitScale(text,maxW,cap){ return clamp(Math.floor(maxW/(text.length*6)),1,cap); }
@@ -800,62 +926,100 @@ function makeTitle(name,maxW,cap,cx,cy,t0,step){
   const hw=Math.max(...lines.map(l=>textW(l,fs)))/2+4, h=(lines.length*9-2)*fs;
   return {lines,fs,cx:clamp(cx,hw,FW-hw),cy:clamp(cy,h/2+4,FH-h/2-6*fs),t0,step,h};
 }
+function subFor(c,bless,fs,title,t0){ const text=`${TIERS[c.tier].name}${bless?' BLESSING':''}  1 IN ${c.oneIn}`;
+  return {text,fs:Math.min(Math.max(1,Math.floor(fs/2)),fitScale(text,FW-12,9)),cx:title.cx,cy:title.cy+title.h/2+2*fs,t0}; }
 async function revealEpic(){
-  const {c}=S.cur;
-  S.hitstop=.16*MOTION+.02; S.wflash=.5; titleFlash(2);
+  const {c,bless}=S.cur;
+  S.hitstop=.16*MOTION+.02; S.wflash=.5; titleFlash(3);
   await expand(); const w=wellCenter();
-  at(0,()=>{ setCenter(w.x,w.y); O.tier=2; O.spot=null; O.flash=reduce?.3:1; O.raysT=1.15; O.rays=1.3; O.scale=.05; O.glowT=.7; O.glow=1; O.dimT=.5; O.nRays=12;
-    trauma(.85*MOTION); A.boom(2); spark(w.x,w.y,2,170,60,300,1.4,90); spark(w.x,w.y,2,60,120,380,.6,40);
-    ring(w.x,w.y,2,330,2); ring(w.x,w.y,2,240,1,.1); ring(w.x,w.y,1,180,1,.2);
-    $('crt').classList.add('on'); S.slowmo=reduce?0:.35;
-    O.title=makeTitle(c.name,FW-12,3,w.x,w.y-18,S.T+.12,.055); const fs=O.title.fs;
-    const sub=`EPIC  1 IN ${c.oneIn}`; const sfs=Math.min(Math.max(1,Math.floor(fs/2)),fitScale(sub,FW-12,9));
-    O.sub={text:sub,fs:sfs,cx:O.title.cx,cy:O.title.cy+O.title.h/2+2*fs,t0:S.T+.12+c.name.length*.055+.1};
+  at(0,()=>{ setCenter(w.x,w.y); O.tier=3; O.spot=null; O.flash=reduce?.3:1; O.raysT=1.15; O.rays=1.3; O.scale=.05; O.glowT=.7; O.glow=1; O.dimT=.5; O.nRays=12;
+    trauma(.85*MOTION); A.boom(2); spark(w.x,w.y,3,170,60,300,1.4,90); spark(w.x,w.y,bless?HOLY:3,60,120,380,.6,40);
+    ring(w.x,w.y,3,330,2); ring(w.x,w.y,3,240,1,.1); ring(w.x,w.y,2,180,1,.2);
+    $('crt').classList.add('on'); S.slowmo=reduce?0:.35; if(bless) A.bless();
+    O.title=makeTitle(c.name,FW-12,3,w.x,w.y-18,S.T+.12,.055);
+    O.sub=subFor(c,bless,O.title.fs,O.title,S.T+.12+c.name.length*.055+.1);
     for(let i=0;i<c.name.length;i++) at(.12+i*.055,()=>{ A.letter(i); if(i===c.name.length-1) trauma(.35); });
   });
-  at(.3,()=>confetti(90,[RAMPS[2][2],RAMPS[2][3],RAMPS[2][4],W,RAMPS[1][3]],true));
+  at(.3,()=>confetti(90,[RAMPS[3][2],RAMPS[3][3],RAMPS[3][4],W,RAMPS[2][3]],true));
   at(2.7,()=>{ O.raysT=0; O.glowT=0; O.dimT=0; O.title=null; O.sub=null; $('crt').classList.remove('on'); });
   at(3.1,finish);
 }
 async function revealLegend(){
-  const {c}=S.cur; S.hitstop=.3*MOTION+.02; S.wflash=.5; titleFlash(3);
+  const {c,bless}=S.cur; S.hitstop=.3*MOTION+.02; S.wflash=.5; titleFlash(4);
   await expand();
-  at(0,()=>{ O.tier=3; O.spot=null; O.dimT=0; O.blackT=1; $('crt').classList.add('on'); A.noise(.4,.1,0,400,60); });
+  at(0,()=>{ O.tier=4; O.spot=null; O.dimT=0; O.blackT=1; $('crt').classList.add('on'); A.noise(.4,.1,0,400,60); });
   at(.55,()=>{ setCenter(FW/2,FH/2); stars(Math.round(FW*FH/260)); O.warp=1; O.orbT=.9; O.orbR=4;
-    const fs=fitScale('1 IN 100',FW*.5,3); O.counter={n:1,target:c.oneIn,t0:S.T,dur:1.4,fs,y:FH*.72,last:1}; A.charge(1.6); });
+    const fs=fitScale('1 IN 1000',FW*.5,3); O.counter={n:1,target:c.oneIn,t0:S.T,dur:1.4,fs,y:FH*.72,last:1}; A.charge(1.6); });
   for(let k=0;k<10;k++) at(.65+k*.14,()=>suck(14+k*3));
   at(2.05,()=>{ O.warp=0; O.orbT=1.3; O.counter&&(O.counter.n=c.oneIn); trauma(.25); });
   at(2.25,()=>{ O.counter=null; O.orbT=0; O.orb=0; O.flash=reduce?.3:1; O.raysT=1.2; O.rays=1.5; O.scale=.05; O.glowT=.9; O.glow=1.4; O.nRays=16;
     trauma(1*MOTION); S.slowmo=reduce?0:.6; A.boom(3);
-    spark(O.cx,O.cy,3,260,60,360,1.6,70); spark(O.cx,O.cy,0,60,140,420,.6,30);
-    ring(O.cx,O.cy,3,380,3); ring(O.cx,O.cy,3,280,2,.12); ring(O.cx,O.cy,0,220,1,.25); ring(O.cx,O.cy,3,160,1,.4);
-    O.title=makeTitle(c.name,FW-12,4,FW/2,FH*.42,S.T+.2,.075); const fs=O.title.fs; const sub=`LEGENDARY  1 IN ${c.oneIn}`;
-    O.sub={text:sub,fs:Math.min(Math.max(1,Math.floor(fs/2)),fitScale(sub,FW-12,9)),cx:FW/2,cy:O.title.cy+O.title.h/2+2*fs,t0:S.T+.2+c.name.length*.075+.15};
+    spark(O.cx,O.cy,4,260,60,360,1.6,70); spark(O.cx,O.cy,bless?HOLY:0,60,140,420,.6,30);
+    ring(O.cx,O.cy,4,380,3); ring(O.cx,O.cy,4,280,2,.12); ring(O.cx,O.cy,0,220,1,.25); ring(O.cx,O.cy,4,160,1,.4);
+    O.title=makeTitle(c.name,FW-12,4,FW/2,FH*.42,S.T+.2,.075);
+    O.sub=subFor(c,bless,O.title.fs,O.title,S.T+.2+c.name.length*.075+.15);
     for(let i=0;i<c.name.length;i++) at(.2+i*.075,()=>{ A.letter(i); trauma(.12); if(i===c.name.length-1){ trauma(.4); A.fanfare(); } });
   });
-  at(2.5,()=>confetti(200,[RAMPS[3][2],RAMPS[3][3],RAMPS[3][4],W,REDR[3],RAMPS[1][3]],true));
-  at(3.1,()=>confetti(120,[RAMPS[3][3],W,RAMPS[3][4]],true));
+  at(2.5,()=>confetti(200,[RAMPS[4][2],RAMPS[4][3],RAMPS[4][4],W,REDR[3],RAMPS[2][3]],true));
+  at(3.1,()=>confetti(120,[RAMPS[4][3],W,RAMPS[4][4]],true));
   at(5.2,()=>{ O.raysT=0; O.glowT=0; O.title=null; O.sub=null; O.blackT=0; O.stars=[]; $('crt').classList.remove('on'); ui.app.classList.remove('drop'); void ui.app.offsetWidth; ui.app.classList.add('drop'); });
   at(5.8,finish);
 }
+// Mythic: the window shatters into a red singularity, a heartbeat counts up the odds, lightning,
+// a double ray burst, then the title in split colour. Everything Legendary does, turned up.
+async function revealMythic(){
+  const {c,bless}=S.cur; S.hitstop=.45*MOTION+.02; S.wflash=.6; titleFlash(5); A.glitch();
+  await expand();
+  at(0,()=>{ O.tier=5; O.spot=null; O.dimT=.65; O.glitch=.35; shatterWindow(); trauma(.5); A.noise(.6,.2,0,300,40); });
+  at(.55,()=>{ setCenter(FW/2,FH/2); O.bg=u32('#140005'); O.blackT=1; suckTiles(); stars(Math.round(FW*FH/300)); O.warp=.6; A.siren(2.4);
+    $('crt').classList.add('on'); });
+  for(let k=0;k<5;k++) at(.7+k*.5,()=>{ O.vig=1; A.heart(); trauma(.22); });
+  at(.8,()=>{ O.orbT=1; O.orbR=3; const fs=fitScale('1 IN 1750',FW*.55,4); O.counter={n:1,target:c.oneIn,t0:S.T,dur:2.1,fs,y:FH*.74,last:1}; A.charge(2.3); });
+  for(let k=0;k<8;k++) at(.9+k*.2,()=>suck(10+k*3));
+  for(let k=0;k<9;k++) at(1.0+k*.22,()=>{ bolt(O.cx,O.cy,.22); if(k%2) A.zap(); });
+  at(2.95,()=>{ O.warp=0; O.orbT=1.5; O.counter&&(O.counter.n=c.oneIn); trauma(.4); });
+  at(3.2,()=>{ O.counter=null; O.orbT=0; O.orb=0; O.flash=reduce?.3:1; O.raysT=1.25; O.rays=1.6; O.rays2T=1; O.rays2=1.3; O.scale=.05;
+    O.glowT=1; O.glow=1.6; O.nRays=18; O.glitch=.5; trauma(1*MOTION); S.slowmo=reduce?0:.7; A.boom(5); A.zap();
+    spark(O.cx,O.cy,5,300,60,420,1.8,70); spark(O.cx,O.cy,4,120,80,380,1.4,60); spark(O.cx,O.cy,HOLY,80,140,460,.7,30);
+    for(let i=0;i<6;i++) ring(O.cx,O.cy,i%2?4:5,420-i*50,i<2?3:1,i*.1);
+    for(let i=0;i<6;i++) bolt(O.cx,O.cy,.35);
+    O.title=makeTitle('MYTHIC',FW-12,8,FW/2,FH*.42,S.T+.15,.09); O.title.chroma=true;
+    for(let i=0;i<6;i++) at(.15+i*.09,()=>{ A.letter(i+2); trauma(.25); });
+  });
+  for(let k=0;k<14;k++) at(3.4+k*.25,()=>{ for(let i=0;i<10;i++) O.P.push({k:'s',x:rnd(0,FW),y:FH+2,vx:rnd(-8,8),vy:rnd(-60,-25),g:-6,age:0,life:rnd(2,3.5),tier:5,s:Math.random()<.3?2:1}); });
+  at(4.5,()=>{ O.glitch=.25; A.glitch(); trauma(.5);
+    O.title=makeTitle(c.name,FW-12,5,FW/2,FH*.4,S.T+.05,.07); O.title.chroma=true;
+    O.sub={...subFor(c,bless,O.title.fs,O.title,S.T+.05+c.name.length*.07+.15),col:row=>row<3?W:RAMPS[5][3]};
+    if(bless) A.bless();
+    for(let i=0;i<c.name.length;i++) at(.05+i*.07,()=>{ A.letter(i); trauma(.1); if(i===c.name.length-1){ trauma(.5); A.fanfare(); bolt(O.cx,O.cy,.3); bolt(O.cx,O.cy,.3); } }); });
+  at(4.7,()=>confetti(240,[RAMPS[5][2],RAMPS[5][3],RAMPS[4][3],W,RAMPS[5][4]],true));
+  at(5.3,()=>confetti(160,[RAMPS[4][3],W,RAMPS[5][2]],true));
+  at(7.2,()=>{ O.raysT=0; O.rays2T=0; O.glowT=0; O.title=null; O.sub=null; O.blackT=0; O.stars=[]; $('crt').classList.remove('on'); reassemble(); });
+  at(7.9,()=>{ clearTiles(); O.bg=DEEPU; ui.app.classList.remove('drop'); void ui.app.offsetWidth; ui.app.classList.add('drop'); trauma(.3); });
+  at(8.3,finish);
+}
 async function finish(){
-  const {c,tier}=S.cur; S.phase='result'; S.ff=false; O.dimT=0; O.spot=null; O.P.length=0;
+  const {c,tier}=S.cur; S.phase='result'; S.ff=false; O.dimT=0; O.spot=null; O.P.length=0; O.bolts.length=0; if(O.tiles.length) clearTiles();
   await collapse();
-  let applied=null, err=null;
-  try{ applied=await invoke('apply_curse',{id:c.id}); }catch(e){ err=String(e); }
+  let res=null, err=null;
+  try{ res=await invoke('claim',{id:c.id}); }catch(e){ err=String(e); }
   S.busy=false;
-  if(applied) applySnap(applied); else refresh();
+  if(res) applySnap(res.state); else refresh();
   setStatus(`${TIERS[tier].label}: ${c.name}`);
-  const d=dialog({title:err?'Curse failed':'Curse applied',icon:err?'error':tier>=2?'warn':'info',
-    html:`<p><b></b><span></span></p><p class="desc"></p><p class="meta when"></p><p class="meta">Ctrl+Alt+P cures every curse, even from the tray.</p>`,
-    buttons:err?[{label:'OK'}]:[{label:'OK'},{label:'Cure now',fn:cureAll}]});
+  const kind=res?res.result:'failed';
+  const title={cursed:'Curse applied',blessed:'Blessing',blocked:'Curse blocked',failed:'Curse failed'}[kind];
+  const icon={cursed:tier>=3?'warn':'info',blessed:'info',blocked:'info',failed:'error'}[kind];
+  const d=dialog({title,icon,html:`<p><b></b><span></span></p><p class="desc"></p><p class="meta when"></p><p class="meta extra"></p>`,
+    buttons:kind==='cursed'?[{label:'OK'},{label:'Cure now',fn:cureAll}]:[{label:'OK'}]});
   d.querySelector('.msg b').textContent=c.name; d.querySelector('.msg span').textContent=` · ${TIERS[tier].label}, 1 in ${c.oneIn}`;
-  d.querySelector('.desc').textContent=err?`Windows wouldn't apply it: ${err}`:c.desc;
-  d.querySelector('.when').textContent=err?'Nothing on your system was changed.':`Wears off in ${fmtDur(c.secs)}.`;
-  at(2,()=>{ if(!S.busy&&S.phase==='result'){ S.phase='idle'; S.ticker={top:'PULL TO ROLL',topC:RAMPS[3][3],bot:lastLabel(c.name),botC:'#6e6e80',next:Infinity}; } });
+  d.querySelector('.desc').textContent=kind==='failed'?`It couldn't be applied: ${err}`:c.desc;
+  d.querySelector('.when').textContent={cursed:`Wears off in ${fmtDur(c.secs)}. Ctrl+Alt+P cures it any time.`,blessed:boonsText(),
+    blocked:res&&res.message||'',failed:'Nothing on your system was changed.'}[kind];
+  d.querySelector('.extra').textContent=res&&res.failed.length?`Some parts were refused: ${res.failed.join('; ')}`:'';
+  at(2,()=>{ if(!S.busy&&S.phase==='result'){ S.phase='idle'; S.ticker={top:'PULL TO ROLL',topC:RAMPS[4][3],bot:lastLabel(c.name),botC:'#6e6e80',next:Infinity}; } });
 }
 // Clicking during a big reveal fast-forwards it.
-addEventListener('pointerdown',()=>{ if(S.busy&&S.phase==='result'&&S.cur&&S.cur.tier>=2) S.ff=true; });
+addEventListener('pointerdown',()=>{ if(S.busy&&S.phase==='result'&&S.cur&&S.cur.tier>=3) S.ff=true; });
 
 /* ================= loop ================= */
 let last=performance.now(), rt=0;
@@ -870,7 +1034,7 @@ function frame(now){
     const pl=S.cur.pl; let pool=CURSES; if(S.phase==='tension'&&Math.random()<.6) pool=CURSES.filter(x=>x.tier===pl.pairTier);
     const c=pick(pool); S.ticker.top=`${TIERS[c.tier].name}  1 IN ${c.oneIn}`; S.ticker.topC=RAMPS[c.tier][3]; S.ticker.bot=c.name.toUpperCase(); S.ticker.botC='#a8a8ba';
     S.ticker.next=S.T+.045*(1+S.stopped*1.1)*(S.phase==='tension'?1.6:1); A.blip(c.tier*3); }
-  if(O.counter){ const c=O.counter, k=clamp((S.T-c.t0)/c.dur,0,1); const n=Math.max(1,Math.round(1+(c.target-1)*k*k*k)); if(n!==c.last){ c.last=n; A.blip(Math.min(20,n/5)); } c.n=n; }
+  if(O.counter){ const c=O.counter, k=clamp((S.T-c.t0)/c.dur,0,1); const n=Math.max(1,Math.round(1+(c.target-1)*k*k*k)); if(n!==c.last){ c.last=n; A.blip(Math.min(20,n/50)); } c.n=n; }
   // shake the chrome (only while the window covers the screen, in whole FX pixels)
   if(S.trauma>0){ S.trauma=Math.max(0,S.trauma-rdt*1.6); const m=expanded?S.trauma*S.trauma*12*MOTION:0; const ox=Math.round(rnd(-m,m)/SC)*SC, oy=Math.round(rnd(-m,m)/SC)*SC;
     ui.app.style.transform=m>.5?`translate(${ox}px,${oy}px)`:''; } else if(ui.app.style.transform) ui.app.style.transform='';
@@ -881,16 +1045,23 @@ addEventListener('resize',layoutFX);
 ui.pull.addEventListener('click',pull);
 setInterval(tickClock,1000);
 TAURI.event.listen('state',e=>applySnap(e.payload));
+TAURI.event.listen('close-requested',()=>closeFlow());
+TAURI.event.listen('mode',e=>setMode(e.payload));
+TAURI.event.listen('flyout',e=>setMode('mini',e.payload));
+TAURI.event.listen('flyout-toggle',()=>{ if(!S.busy&&!expanded) invoke('hide_to_tray'); });
+// The flyout tucks itself away when you click somewhere else, like the volume flyout.
+TAURI.window.getCurrentWindow().onFocusChanged(({payload:focused})=>{
+  if(!focused&&mode==='mini'&&!S.busy&&!expanded&&!$('dlglayer').children.length) invoke('hide_to_tray'); });
 
 (async()=>{
   const s=await invoke('get_state'); applySnap(s);
   if(document.fonts&&document.fonts.ready) await document.fonts.ready;
   layoutFX();
   const b=ui.app.getBoundingClientRect();
-  await invoke('fit_window',{w:Math.ceil(b.width),h:Math.ceil(b.height)});
+  await invoke('fit_window',{w:Math.ceil(b.width),h:Math.ceil(b.height),anchor:null});
   layoutFX();
-  if(s.recovered) dialog({title:'gachaos',icon:'info',html:`<p>gachaos closed while a curse was active, so it has been undone.</p><p class="meta"></p>`}).querySelector('.meta').textContent=s.recovered;
-  window.GACHAOS={pull,setForce,S,O};
+  if(s.recovered) dialog({title:'gachaos',icon:'info',html:`<p>gachaos was closed while a curse was active, so it has been undone.</p><p class="meta"></p>`}).querySelector('.meta').textContent=s.recovered;
+  window.GACHAOS={pull,setForce,setMode,closeFlow,S,O};
   requestAnimationFrame(frame);
 })();
 })();
