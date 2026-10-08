@@ -6,8 +6,11 @@ use crate::game::State;
 /// rather than silently overwritten.
 pub fn load(path: &Path) -> State {
     let Ok(text) = std::fs::read_to_string(path) else { return State::default() };
-    match serde_json::from_str(&text) {
-        Ok(st) => st,
+    match serde_json::from_str::<State>(&text) {
+        Ok(mut st) => {
+            st.migrate();
+            st
+        }
         Err(e) => {
             eprintln!("gachaos: save file unreadable ({e}), starting fresh");
             let _ = std::fs::rename(path, path.with_extension("json.bad"));

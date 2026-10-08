@@ -51,3 +51,23 @@ See the README for the roster and `docs/QA.md` for what each one should do.
 - `tests/ui/run.js`: rolls every tier in Chromium against a mocked bridge and
   checks that the rolled curse is the one applied and the window is restored.
 - Win32 effects: manual checklist in `docs/QA.md`.
+
+## Update 2026-10-08: six tiers, blessings, tray flyout
+
+- **Tiers**: Common, Uncommon (light green), Rare, Epic, Legendary, Mythic
+  (red), at 50 / 28 / 14 / 6 / 1.6 / 0.4%. Each has 5 curses and 2 blessings.
+  A second pity guarantees Legendary or better by pull 90.
+- **Curses are made of parts.** Each part has a slot (display, screen colour,
+  cursor movement, wallpaper, volume, ...); parts in one slot never stack.
+  Mythic curses stack several parts. Some parts are drawn by a click-through
+  overlay window instead of changing a Windows setting.
+- **Blessings**: tickets (allowed past the cap), free pulls, luck (2× Rare+),
+  shields that block curses, immunity, and Midas (free Epic+ pulls).
+- **Mythic reveal**: the window shatters into tiles that fall into a red
+  singularity, a heartbeat counts up the odds, lightning, a double ray burst,
+  "MYTHIC" then the name in split red/cyan, embers, and the window rebuilds.
+- **Stuck curse fix**: ✕ with a curse running asks to cure first; a watchdog
+  process undoes curses if gachaos is killed; a second launch talks to the
+  running copy (`--cure` cures through it); the tray tooltip shows the curse.
+- **Tray flyout**: clicking the tray icon opens a compact 300 px window next to
+  it, which hides when focus moves elsewhere.

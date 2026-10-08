@@ -1,13 +1,16 @@
-// Curse effects. Each one changes something about the user's Windows session
-// and records in `Restore` exactly what it changed, so it can be undone later:
-// on expiry, by the panic hotkey, on quit, or on the next launch after a crash.
-// Every change is session-only (nothing is written to the registry), so a
-// reboot also undoes it.
+// Curse effects. Each part changes one thing about the user's session and
+// records in `Restore` exactly what it changed, so it can be undone later: on
+// expiry, by the panic hotkey, on quit, by the watchdog if the app is killed,
+// or on the next launch. Every change is session-only (nothing is written to
+// the user's profile), so a reboot also undoes it. Overlay parts aren't
+// handled here: gachaos draws them in its own window (see main.rs).
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
+
+use crate::game;
 
 #[cfg(windows)]
 mod win32;
@@ -34,36 +37,74 @@ pub struct Restore {
     pub volume: Option<(f32, bool)>,
     /// Original desktop background colour (COLORREF).
     pub desktop_color: Option<u32>,
+    /// Original pointer speed (1-20).
+    pub mouse_speed: Option<u32>,
+    /// Original number of mouse trails (0 = off).
+    pub trails: Option<u32>,
+    /// Original double-click time in milliseconds.
+    pub dblclick: Option<u32>,
 }
 
-/// A repeating effect (cursor drift, beeps, colour cycling) that runs on its
-/// own thread until the curse is reverted.
+/// A repeating effect (cursor drift, beeps, screen colour) that runs on its
+/// own thread until the curse is reverted. `finish` runs on that same thread
+/// when it stops, for APIs that must be torn down where they were set up.
 pub struct Worker {
     pub every: Duration,
     pub tick: Box<dyn FnMut() + Send>,
+    pub finish: Option<Box<dyn FnOnce() + Send>>,
+}
+
+impl Worker {
+    #[cfg_attr(not(windows), allow(dead_code))]
+    pub fn new(every_ms: u64, tick: impl FnMut() + Send + 'static) -> Self {
+        Worker { every: Duration::from_millis(every_ms), tick: Box::new(tick), finish: None }
+    }
+}
+
+/// What applying a curse's parts achieved.
+pub struct Applied {
+    pub restore: Restore,
+    /// Parts that took effect (overlay parts always do).
+    pub parts: Vec<String>,
+    /// Parts Windows refused, with the reason.
+    pub failed: Vec<(String, String)>,
 }
 
 #[derive(Default)]
 pub struct Runner {
-    worker: Mutex<Option<(Arc<AtomicBool>, JoinHandle<()>)>>,
+    workers: Mutex<Vec<(Arc<AtomicBool>, JoinHandle<()>)>>,
 }
 
 impl Runner {
-    pub fn apply(&self, id: &str) -> Result<Restore, String> {
-        let mut restore = Restore::default();
-        match platform::apply(id, &mut restore) {
-            Ok(worker) => {
-                if let Some(w) = worker {
-                    self.start(w);
-                }
-                Ok(restore)
+    /// Applies every part it can. Stacked curses keep whatever worked; it's an
+    /// error only when nothing took effect at all.
+    pub fn apply(&self, parts: &[&str]) -> Result<Applied, String> {
+        let mut out = Applied { restore: Restore::default(), parts: Vec::new(), failed: Vec::new() };
+        for p in parts {
+            if game::part(p).is_some_and(|d| d.overlay) {
+                out.parts.push(p.to_string());
+                continue;
             }
-            Err(e) => {
-                // Undo whatever part of it did take effect.
-                platform::revert(&restore);
-                Err(e)
+            let mut r = Restore::default();
+            match platform::apply(p, &mut r) {
+                Ok(worker) => {
+                    merge(&mut out.restore, r);
+                    if let Some(w) = worker {
+                        self.start(w);
+                    }
+                    out.parts.push(p.to_string());
+                }
+                Err(e) => {
+                    platform::revert(&r); // undo whatever part of it did take effect
+                    out.failed.push((p.to_string(), e));
+                }
             }
         }
+        if out.parts.is_empty() {
+            let reason = out.failed.first().map(|f| f.1.clone()).unwrap_or_else(|| "nothing to apply".into());
+            return Err(reason);
+        }
+        Ok(out)
     }
 
     pub fn revert(&self, restore: &Restore) {
@@ -71,30 +112,54 @@ impl Runner {
         platform::revert(restore);
     }
 
-    fn start(&self, mut w: Worker) {
-        self.stop();
+    fn start(&self, w: Worker) {
         let stop = Arc::new(AtomicBool::new(false));
         let flag = stop.clone();
+        let Worker { every, mut tick, finish } = w;
         let handle = std::thread::spawn(move || {
-            let step = Duration::from_millis(20);
+            let step = Duration::from_millis(15);
             while !flag.load(Ordering::Relaxed) {
-                (w.tick)();
+                tick();
                 let mut waited = Duration::ZERO;
-                while waited < w.every && !flag.load(Ordering::Relaxed) {
+                while waited < every && !flag.load(Ordering::Relaxed) {
                     std::thread::sleep(step);
                     waited += step;
                 }
             }
+            if let Some(f) = finish {
+                f();
+            }
         });
-        *self.worker.lock().unwrap() = Some((stop, handle));
+        self.workers.lock().unwrap().push((stop, handle));
     }
 
     fn stop(&self) {
-        if let Some((stop, handle)) = self.worker.lock().unwrap().take() {
+        let workers = std::mem::take(&mut *self.workers.lock().unwrap());
+        for (stop, _) in &workers {
             stop.store(true, Ordering::Relaxed);
+        }
+        for (_, handle) in workers {
             let _ = handle.join();
         }
     }
+}
+
+/// Undoes a saved curse with no workers running: crash recovery and the watchdog.
+pub fn revert_saved(restore: &Restore) {
+    platform::revert(restore);
+}
+
+/// Parts never share a slot, so at most one side has each field set.
+fn merge(into: &mut Restore, r: Restore) {
+    into.cursors |= r.cursors;
+    into.swap = into.swap.or(r.swap);
+    into.wallpaper = into.wallpaper.take().or(r.wallpaper);
+    into.orientation = into.orientation.or(r.orientation);
+    into.volume = into.volume.or(r.volume);
+    into.desktop_color = into.desktop_color.or(r.desktop_color);
+    into.mouse_speed = into.mouse_speed.or(r.mouse_speed);
+    into.trails = into.trails.or(r.trails);
+    into.dblclick = into.dblclick.or(r.dblclick);
 }
 
 /// The pixel arrow used for Giant Cursor. '#' outline, 'o' fill.
@@ -203,11 +268,15 @@ mod tests {
         let r = Runner::default();
         let hits = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let h = hits.clone();
-        r.start(Worker { every: Duration::from_millis(20), tick: Box::new(move || { h.fetch_add(1, Ordering::Relaxed); }) });
+        r.start(Worker::new(20, move || { h.fetch_add(1, Ordering::Relaxed); }));
+        let finished = Arc::new(AtomicBool::new(false));
+        let f = finished.clone();
+        r.start(Worker { finish: Some(Box::new(move || f.store(true, Ordering::Relaxed))), ..Worker::new(20, || {}) });
         std::thread::sleep(Duration::from_millis(120));
         r.revert(&Restore::default());
         let after = hits.load(Ordering::Relaxed);
         assert!(after > 0);
+        assert!(finished.load(Ordering::Relaxed), "finish ran on revert");
         std::thread::sleep(Duration::from_millis(80));
         assert_eq!(hits.load(Ordering::Relaxed), after);
     }
