@@ -55,13 +55,13 @@ fn set_wallpaper(path: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn parse_pct(out: &str) -> Option<f32> {
+    out.split('/').nth(1).and_then(|s| s.trim().trim_end_matches('%').parse().ok())
+}
+
 fn volume_get() -> Result<(f32, bool), String> {
     let vol_out = run(&["pactl", "get-sink-volume", "@DEFAULT_SINK@"])?;
-    let pct: f32 = vol_out
-        .split('/')
-        .nth(1)
-        .and_then(|s| s.trim().trim_end_matches('%').parse().ok())
-        .ok_or_else(|| "couldn't parse pactl volume output".to_string())?;
+    let pct = parse_pct(&vol_out).ok_or_else(|| "couldn't parse pactl volume output".to_string())?;
     let mute_out = run(&["pactl", "get-sink-mute", "@DEFAULT_SINK@"])?;
     Ok((pct / 100.0, mute_out.contains("yes")))
 }
@@ -82,10 +82,11 @@ fn run(args: &[&str]) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    use super::parse_pct;
+
     #[test]
     fn volume_pct_parses_from_pactl_style_output() {
         let line = "Volume: front-left: 65536 /  73% / 0.00 dB,   front-right: 65536 /  73% / 0.00 dB\n";
-        let pct: f32 = line.split('/').nth(1).and_then(|s| s.trim().trim_end_matches('%').parse().ok()).unwrap();
-        assert_eq!(pct, 73.0);
+        assert_eq!(parse_pct(line), Some(73.0));
     }
 }
