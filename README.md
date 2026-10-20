@@ -7,9 +7,12 @@ rolls stay inside the reels. Epic and up break out of the window and take over
 the screen, and Mythic shatters the window itself.
 
 Every curse undoes itself. `Ctrl+Alt+P` undoes all of them at once, even from
-the tray. Nothing is saved to your Windows profile, so a reboot also undoes
-everything. If gachaos is killed mid-curse, a small watchdog process undoes the
-curse straight away; failing that, the next launch does.
+the tray. If gachaos is killed mid-curse, a small watchdog process undoes the
+curse straight away; failing that, the next launch does. On Windows nothing is
+saved to your profile, so a reboot also undoes everything; on Linux and macOS,
+wallpaper and volume curses change real desktop settings that *can* survive a
+reboot if gachaos never gets to revert them first — relaunching it (or
+`gachaos --cure`) always cures a leftover one.
 
 ## Odds
 
@@ -100,8 +103,8 @@ Run with `--qa` (or `GACHAOS_QA=1`) to unlock **Options › Force next roll**,
 **Refill tickets** and **Reset save** for testing.
 
 From Linux you can cross-compile with `cargo xwin build --release --target
-x86_64-pc-windows-msvc`. On Linux the app itself also runs with only the
-overlay curses, which is handy for UI work.
+x86_64-pc-windows-msvc`. On Linux the app itself also runs, with the overlay
+curses plus the wallpaper/volume curses, which is handy for UI work.
 
 ## UI test
 

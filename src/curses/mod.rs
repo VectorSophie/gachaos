@@ -1,9 +1,11 @@
 // Curse effects. Each part changes one thing about the user's session and
 // records in `Restore` exactly what it changed, so it can be undone later: on
 // expiry, by the panic hotkey, on quit, by the watchdog if the app is killed,
-// or on the next launch. Every change is session-only (nothing is written to
-// the user's profile), so a reboot also undoes it. Overlay parts aren't
-// handled here: gachaos draws them in its own window (see main.rs).
+// or on the next launch. On Windows every change is session-only (nothing is
+// written to the user's profile), so a reboot also undoes it; on Linux/macOS,
+// wallpaper and volume changes go through gsettings/pactl/osascript and can
+// outlive a reboot until gachaos next runs to revert them. Overlay parts
+// aren't handled here: gachaos draws them in its own window (see main.rs).
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -41,6 +43,9 @@ pub struct Restore {
     pub swap: Option<bool>,
     /// Original wallpaper path ("" means no wallpaper).
     pub wallpaper: Option<String>,
+    /// Original dark-mode wallpaper path, Linux only (gsettings tracks light
+    /// and dark wallpapers separately; None everywhere else).
+    pub wallpaper_dark: Option<String>,
     /// Original display orientation (0-3) and resolution.
     pub orientation: Option<(u32, u32, u32)>,
     /// Original master volume (0-1) and mute state.
@@ -164,6 +169,7 @@ fn merge(into: &mut Restore, r: Restore) {
     into.cursors |= r.cursors;
     into.swap = into.swap.or(r.swap);
     into.wallpaper = into.wallpaper.take().or(r.wallpaper);
+    into.wallpaper_dark = into.wallpaper_dark.take().or(r.wallpaper_dark);
     into.orientation = into.orientation.or(r.orientation);
     into.volume = into.volume.or(r.volume);
     into.desktop_color = into.desktop_color.or(r.desktop_color);

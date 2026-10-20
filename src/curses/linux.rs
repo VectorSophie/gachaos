@@ -10,7 +10,9 @@ use super::{heist_bmp, Restore, Worker};
 pub fn apply(id: &str, r: &mut Restore) -> Result<Option<Worker>, String> {
     match id {
         "wall" => {
-            r.wallpaper = Some(get_wallpaper()?);
+            let (light, dark) = get_wallpaper()?;
+            r.wallpaper = Some(light);
+            r.wallpaper_dark = Some(dark);
             let path = std::env::temp_dir().join("gachaos-heist.bmp");
             std::fs::write(&path, heist_bmp(640, 360, 6)).map_err(|e| format!("couldn't write wallpaper: {e}"))?;
             set_wallpaper(&path.to_string_lossy())?;
@@ -38,20 +40,44 @@ pub fn revert(r: &Restore) {
     if let Some((vol, mute)) = r.volume {
         let _ = volume_set(vol, mute);
     }
-    if let Some(path) = &r.wallpaper {
-        let _ = set_wallpaper(path);
+    match (&r.wallpaper, &r.wallpaper_dark) {
+        (Some(light), Some(dark)) => {
+            let _ = restore_wallpaper(light, dark);
+        }
+        (Some(light), None) => {
+            let _ = set_wallpaper(light); // no separate dark value recorded
+        }
+        _ => {}
     }
 }
 
-fn get_wallpaper() -> Result<String, String> {
-    let out = run(&["gsettings", "get", "org.gnome.desktop.background", "picture-uri"])?;
-    Ok(out.trim().trim_matches('\'').trim_start_matches("file://").to_string())
+fn get_wallpaper() -> Result<(String, String), String> {
+    let strip = |s: String| s.trim().trim_matches('\'').trim_start_matches("file://").to_string();
+    let light = run(&["gsettings", "get", "org.gnome.desktop.background", "picture-uri"])?;
+    let dark = run(&["gsettings", "get", "org.gnome.desktop.background", "picture-uri-dark"])?;
+    Ok((strip(light), strip(dark)))
 }
 
+/// Sets both the light and dark wallpaper to the same image — used while a
+/// curse is active, so the prank shows regardless of the user's colour scheme.
 fn set_wallpaper(path: &str) -> Result<(), String> {
+    if path.is_empty() {
+        return Ok(()); // nothing to set; avoids writing a broken "file://" URI
+    }
     let uri = format!("file://{path}");
     run(&["gsettings", "set", "org.gnome.desktop.background", "picture-uri", &uri])?;
     let _ = run(&["gsettings", "set", "org.gnome.desktop.background", "picture-uri-dark", &uri]);
+    Ok(())
+}
+
+/// Restores the light and dark wallpapers independently, for revert.
+fn restore_wallpaper(light: &str, dark: &str) -> Result<(), String> {
+    if !light.is_empty() {
+        run(&["gsettings", "set", "org.gnome.desktop.background", "picture-uri", &format!("file://{light}")])?;
+    }
+    if !dark.is_empty() {
+        let _ = run(&["gsettings", "set", "org.gnome.desktop.background", "picture-uri-dark", &format!("file://{dark}")]);
+    }
     Ok(())
 }
 

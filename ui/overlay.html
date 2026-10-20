@@ -55,19 +55,22 @@ function sprite(rows,x,y,cols,flip){ rows.forEach((row,ry)=>{ for(let rx=0;rx<ro
 
 // state
 let parts=new Set(), untilMs=0, cur=null, t=0, last=performance.now();
+let spanMs=0, lastUntilMs=0;
 const trail=[], flakes=[], confetti=[]; let piles=new Float32Array(1);
 const pal={x:40,dir:1,hop:0,vy:0,next:2}; const ghost={x:-20,y:-20,boo:0};
 const drops=[], eyes=[], flies=[], cracks=[]; let crackGrow=0, crackA=0;
 function spawnGhost(){ const e=Math.floor(Math.random()*4); ghost.x=e===0?-16:e===1?LW+2:rnd(0,LW); ghost.y=e===2?-16:e===3?LH+2:rnd(0,LH); }
 spawnGhost();
 
-async function poll(){ try{ const s=await invoke('overlay_state'); parts=new Set(s.parts); untilMs=s.untilMs;
+async function poll(){ try{ const s=await invoke('overlay_state'); parts=new Set(s.parts);
+    if(s.untilMs!==lastUntilMs){ lastUntilMs=s.untilMs; spanMs=s.untilMs?s.untilMs-Date.now():0; }
+    untilMs=s.untilMs;
     cur=s.cursor?[s.cursor[0]/S, s.cursor[1]/S]:null; }catch(e){} }
 
 function pixelPass(){
   const fog=parts.has('fog'), spot=parts.has('spotlight')||parts.has('eclipse'), pulse=parts.has('redpulse');
   if(!fog&&!spot&&!pulse) return false;
-  const fogR=55+Math.sin(t*.6)*15, frac=untilMs?clamp((untilMs-Date.now())/600000,0,1):1;
+  const fogR=55+Math.sin(t*.6)*15, frac=untilMs&&spanMs?clamp((untilMs-Date.now())/spanMs,0,1):1;
   const spotR=parts.has('eclipse')?28+frac*80:48, cx=cur?cur[0]:LW/2, cy=cur?cur[1]:LH/2;
   const beat=(t%1.2), heart=beat<.12?1:beat<.24?.3:beat<.36?.8:0, pulseAmt=.35+heart*.35;
   const FOG1=u32('#c8ccd8'), FOG2=u32('#8a8e9c'), BLACK=u32(K), RED1=u32(RED[1]), RED0=u32(RED[0]), CORONA=[u32(RED[2]),u32('#ff9a3a'),u32('#ffe04f')];
@@ -124,7 +127,7 @@ function frame(now){
         g.fillStyle=i===0?'#d6ffd6':i<3?'#4fff6a':'#0a6b1a'; g.fillRect(d.x,yy,2,2); } } }
   else drops.length=0;
   // eyes everywhere: a fixed scatter of eyes, pupils track the cursor
-  if(parts.has('eyes')){ if(!eyes.length) for(let k=0;k<9;k++) eyes.push({x:rnd(10,LW-10),y:rnd(10,LH-10)});
+  if(parts.has('eyes')){ if(!eyes.length) for(let k=0;k<9;k++) eyes.push({x:Math.round(rnd(10,LW-10)),y:Math.round(rnd(10,LH-10))});
     for(const e of eyes){ g.fillStyle=W; g.fillRect(e.x-3,e.y-2,7,5);
       const dx=(cur?cur[0]:LW/2)-e.x, dy=(cur?cur[1]:LH/2)-e.y, d=Math.hypot(dx,dy)||1;
       g.fillStyle=K; g.fillRect(e.x+Math.round(dx/d)-1,e.y+Math.round(dy/d)-1,2,2); } }

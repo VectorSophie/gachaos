@@ -3,18 +3,40 @@
 // the real rules are tested in src/game.rs.
 (() => {
   const TIER_NAMES = ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary', 'Mythic'];
-  const ONE_IN = [14, 25, 50, 117, 438, 1750];
+  const ONE_IN = [34, 41, 52, 90, 269, 1076];
   const SECS = [60, 120, 240, 360, 480, 600];
+  // Mirrors src/game.rs's CATALOG: curses per tier 13/8/5/3/3/3, blessings 5/3/2/1/1/1.
   const NAMES = [
-    ['Giant Cursor', 'Wrong-Handed', 'Sloth Mouse', 'Long Tail', 'Pixel Pal', 'Pocket Change', 'Free Spin'],
-    ['Turbo Mouse', 'Butterfingers', 'Whisper Mode', 'Window Wobble', 'Rainbow Trail', 'Spare Change', 'Four-Leaf Clover'],
-    ['Jitterbug Cursor', 'Wallpaper Heist', 'Teleporter', 'Pixel Snow', 'Fog Bank', 'Lucky Break', 'Umbrella'],
-    ['Upside-Down World', 'Beep Storm', 'Negative Space', 'Silent Film', 'Spotlight', 'Windfall', 'Talisman'],
-    ['Sideways Vision', 'Disco Inferno', 'Too Close', 'Confetti Storm', 'Ghost Hunt', 'Jackpot', 'Sanctuary'],
-    ['The Possession', 'Pandemonium', 'Doom Clock', 'Blood Moon', 'Eclipse', 'Midas Touch', 'Divine Grace'],
+    [
+      'Giant Cursor', 'Wrong-Handed', 'Sloth Mouse', 'Long Tail', 'Pixel Pal', 'Negative Space', 'Silent Film',
+      'Crimson Tint', 'Static Fuzz', 'Matrix Drip', 'Eyes Everywhere', 'Firefly Dusk', 'Crack Spreads',
+      'Pocket Change', 'Free Spin', 'Talisman', 'Penny From Heaven', "Rabbit's Foot",
+    ],
+    [
+      'Turbo Mouse', 'Butterfingers', 'Whisper Mode', 'Window Wobble', 'Rainbow Trail', 'Sideways Vision', 'Confetti Storm', 'Tunnel Vision',
+      'Spare Change', 'Four-Leaf Clover', 'Mini Jackpot',
+    ],
+    [
+      'Jitterbug Cursor', 'Wallpaper Heist', 'Teleporter', 'Pixel Snow', 'Fog Bank',
+      'Lucky Break', 'Umbrella',
+    ],
+    [
+      'Upside-Down World', 'Beep Storm', 'Spotlight',
+      'Windfall',
+    ],
+    [
+      'Disco Inferno', 'Too Close', 'Ghost Hunt',
+      'Sanctuary',
+    ],
+    [
+      'The Possession', 'Pandemonium', 'Doom Clock',
+      'Divine Grace',
+    ],
   ];
+  const CURSE_COUNTS = [13, 8, 5, 3, 3, 3];
   const CATALOG = NAMES.flatMap((names, tier) => names.map((name, i) => ({
-    id: `t${tier}e${i}`, name, tier, kind: i < 5 ? 'curse' : 'blessing', secs: i < 5 ? SECS[tier] : 0,
+    id: `t${tier}e${i}`, name, tier, kind: i < CURSE_COUNTS[tier] ? 'curse' : 'blessing',
+    secs: i < CURSE_COUNTS[tier] ? SECS[tier] : 0,
     desc: `Test entry: ${name}.`, oneIn: ONE_IN[tier],
   })));
   const st = { tickets: 24, pity: 0, pityLegend: 0, pulls: 0, counts: [0, 0, 0, 0, 0, 0], best: -1, bestName: '', history: [], sound: false,

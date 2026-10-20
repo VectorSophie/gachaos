@@ -536,7 +536,9 @@ mod tests {
             max_lgap = max_lgap.max(lgap);
         }
         let pct = |t: usize| st.counts[t] as f64 * 1000.0 / total as f64;
-        // Pity nudges the top tiers up a little, so allow for that.
+        // Pity forcing floor=3 feeds tier 3 disproportionately (36/51 = 70.6%
+        // of pity's weight), inflating it by ~16 per mille — hence tier 3's
+        // unusually wide tolerance below.
         for (t, (want, tol)) in [(535.3, 35.0), (267.7, 16.0), (133.8, 10.0), (44.6, 18.0), (14.9, 8.0), (3.7, 3.0)].iter().enumerate() {
             assert!((pct(t) - want).abs() < *tol, "tier {t}: {} per mille, want {want}", pct(t));
         }
