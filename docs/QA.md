@@ -6,6 +6,13 @@ curses (†) can also be checked on Linux/macOS. Launch with `--qa` (or
 `GACHAOS_QA=1`) and use **Options › Force next roll** to pick a tier. Inside a
 tier the result is random, so roll until you've seen each entry.
 
+The Linux wallpaper/volume curses (Wallpaper Heist, Whisper Mode, Beep Storm)
+need a real GNOME desktop session to check by eye — `gsettings` has nothing
+to change wallpaper on, and no tray host to attach to, under WSL/WSLg or a
+headless CI runner. `cargo test` already covers `linux.rs`'s own logic
+natively; the visual check is a "whenever you have a real Linux desktop
+handy" item, not a release blocker.
+
 ## Getting out of a curse
 
 Check each of these with a curse running (Jitterbug Cursor is a good one, it
