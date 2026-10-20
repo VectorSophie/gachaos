@@ -9,3 +9,6 @@ node_modules/
 # Misc
 *.tmp
 *.log
+
+# Isolated worktrees for in-progress plans
+/.worktrees/
