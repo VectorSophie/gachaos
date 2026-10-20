@@ -11,8 +11,11 @@ pub const PITY: u32 = 20; // the 20th pull without Epic+ is forced Epic+
 pub const PITY_LEGEND: u32 = 90; // the 90th pull without Legendary+ is forced Legendary+
 pub const HISTORY_CAP: usize = 30;
 pub const TIERS: usize = 6;
-/// Common, Uncommon, Rare, Epic, Legendary, Mythic, per 1000 pulls.
-pub const TIER_ODDS: [u32; TIERS] = [500, 280, 140, 60, 16, 4];
+/// Common, Uncommon, Rare, Epic, Legendary, Mythic — relative weights
+/// (ratios of 2x, 2x, 3x, 3x, 4x going up the tiers). Don't need to sum to
+/// any particular total; `one_in` and `roll_tier` derive everything from
+/// the array itself.
+pub const TIER_ODDS: [u32; TIERS] = [432, 216, 108, 36, 12, 3];
 pub const TIER_NAMES: [&str; TIERS] = ["Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic"];
 /// How long a curse of each tier lasts.
 pub const TIER_SECS: [u64; TIERS] = [60, 120, 240, 360, 480, 600];
@@ -56,22 +59,41 @@ const fn bless(id: &'static str, name: &'static str, tier: u8, desc: &'static st
     Entry { id, name, tier, desc, boon: Some(boon) }
 }
 
-/// Five curses and two blessings per tier.
+/// Entry counts taper like Fibonacci, shrinking from Common to Mythic:
+/// curses 13/8/5/3/3/3, blessings 5/3/2/1/1/1.
 pub const CATALOG: &[Entry] = &[
+    // Common
     curse("giant", "Giant Cursor", 0, "Your mouse cursor is four times its normal size."),
     curse("wrong", "Wrong-Handed", 0, "Your left and right mouse buttons are swapped."),
     curse("sloth", "Sloth Mouse", 0, "Your mouse pointer crawls at its slowest speed."),
     curse("trails", "Long Tail", 0, "Your pointer drags a long trail of ghost cursors."),
     curse("pal", "Pixel Pal", 0, "A small pixel creature wanders along the bottom of your screen."),
+    curse("negative", "Negative Space", 0, "Every colour on your screen is inverted."),
+    curse("silent", "Silent Film", 0, "Your whole screen turns black and white."),
+    curse("bloodred", "Crimson Tint", 0, "Your whole screen is washed in deep red."),
+    curse("static", "Static Fuzz", 0, "Bursts of TV static sweep across your screen."),
+    curse("matrix", "Matrix Drip", 0, "Columns of glowing characters cascade down your screen."),
+    curse("eyes", "Eyes Everywhere", 0, "A scatter of eyes appears on your screen, watching your cursor."),
+    curse("firefly", "Firefly Dusk", 0, "Glowing fireflies drift and pulse across your screen."),
+    curse("crack", "Crack Spreads", 0, "A crack appears on your screen and keeps spreading."),
     bless("pocket", "Pocket Change", 0, "+1 ticket.", Boon::Tickets(1)),
     bless("freespin", "Free Spin", 0, "Your next pull costs nothing.", Boon::FreePulls(1)),
+    bless("talisman", "Talisman", 0, "Blocks the next curse you roll.", Boon::Shield(1)),
+    bless("midas", "Penny From Heaven", 0, "Your next pull is free and guaranteed Epic or better.", Boon::Midas(1)),
+    bless("rabbitfoot", "Rabbit's Foot", 0, "Your next pull has double the odds of Rare or better.", Boon::Luck(1)),
+    // Uncommon
     curse("turbo", "Turbo Mouse", 1, "Your mouse pointer moves at its fastest speed."),
     curse("butter", "Butterfingers", 1, "Double-clicks have to be lightning fast to count."),
     curse("whisper", "Whisper Mode", 1, "Your volume drops to 10%."),
     curse("wobble", "Window Wobble", 1, "Whatever window you're using won't sit still."),
     curse("trail", "Rainbow Trail", 1, "A pixel rainbow follows your cursor everywhere."),
+    curse("sideways", "Sideways Vision", 1, "Your screen is rotated 90 degrees."),
+    curse("confetti", "Confetti Storm", 1, "Confetti pours over your desktop without stopping."),
+    curse("eclipse", "Tunnel Vision", 1, "Everything goes dark except a shrinking circle around your cursor."),
     bless("spare", "Spare Change", 1, "+2 tickets.", Boon::Tickets(2)),
     bless("clover", "Four-Leaf Clover", 1, "Your next 3 pulls have double the odds of Rare or better.", Boon::Luck(3)),
+    bless("jackpot", "Mini Jackpot", 1, "+3 tickets.", Boon::Tickets(3)),
+    // Rare
     curse("jitter", "Jitterbug Cursor", 2, "Your cursor keeps drifting away from where you point."),
     curse("wall", "Wallpaper Heist", 2, "Someone replaced your wallpaper."),
     curse("teleport", "Teleporter", 2, "Your cursor jumps to a random spot every few seconds."),
@@ -79,26 +101,20 @@ pub const CATALOG: &[Entry] = &[
     curse("fog", "Fog Bank", 2, "Dithered fog creeps in from the edges of your screen."),
     bless("lucky", "Lucky Break", 2, "+4 tickets.", Boon::Tickets(4)),
     bless("umbrella", "Umbrella", 2, "Blocks the next curse you roll.", Boon::Shield(1)),
+    // Epic
     curse("upside", "Upside-Down World", 3, "Your screen is flipped 180 degrees."),
     curse("beep", "Beep Storm", 3, "Your volume goes up and random system beeps play."),
-    curse("negative", "Negative Space", 3, "Every colour on your screen is inverted."),
-    curse("silent", "Silent Film", 3, "Your whole screen turns black and white."),
     curse("spotlight", "Spotlight", 3, "Everything goes dark except a small circle around your cursor."),
     bless("windfall", "Windfall", 3, "+8 tickets.", Boon::Tickets(8)),
-    bless("talisman", "Talisman", 3, "Blocks the next 2 curses you roll.", Boon::Shield(2)),
-    curse("sideways", "Sideways Vision", 4, "Your screen is rotated 90 degrees."),
+    // Legendary
     curse("disco", "Disco Inferno", 4, "Your desktop flashes through disco colours."),
     curse("tooclose", "Too Close", 4, "Your screen is zoomed in and follows your cursor around."),
-    curse("confetti", "Confetti Storm", 4, "Confetti pours over your desktop without stopping."),
     curse("ghost", "Ghost Hunt", 4, "A pixel ghost chases your cursor. Don't let it catch you."),
-    bless("jackpot", "Jackpot", 4, "+16 tickets, even past the cap.", Boon::Tickets(16)),
     bless("sanctuary", "Sanctuary", 4, "No curse can touch you for the next 30 minutes.", Boon::Immunity(1800)),
+    // Mythic
     curse("possession", "The Possession", 5, "Upside-Down World, Negative Space and Jitterbug Cursor, all at once."),
     curse("pandemonium", "Pandemonium", 5, "One random curse from every tier below Mythic, all at once."),
     curse("doom", "Doom Clock", 5, "A giant countdown takes over your screen while Beep Storm and Teleporter run."),
-    curse("bloodmoon", "Blood Moon", 5, "Your screen turns blood red and only a spotlight is left."),
-    curse("eclipse", "Eclipse", 5, "Your screen tips sideways while the light around your cursor closes in."),
-    bless("midas", "Midas Touch", 5, "Your next 5 pulls are free and guaranteed Epic or better.", Boon::Midas(5)),
     bless("grace", "Divine Grace", 5, "Tickets refilled to full and no curses for 2 hours.", Boon::Grace),
 ];
 
@@ -114,13 +130,18 @@ pub struct Part {
     pub id: &'static str,
     pub slot: &'static str,
     pub overlay: bool,
+    /// Non-overlay parts with a real implementation on every OS (today: wallpaper, volume).
+    pub cross_platform: bool,
 }
 
 const fn os(id: &'static str, slot: &'static str) -> Part {
-    Part { id, slot, overlay: false }
+    Part { id, slot, overlay: false, cross_platform: false }
+}
+const fn both(id: &'static str, slot: &'static str) -> Part {
+    Part { id, slot, overlay: false, cross_platform: true }
 }
 const fn ov(id: &'static str, slot: &'static str) -> Part {
-    Part { id, slot, overlay: true }
+    Part { id, slot, overlay: true, cross_platform: false }
 }
 
 pub const PARTS: &[Part] = &[
@@ -131,16 +152,16 @@ pub const PARTS: &[Part] = &[
     ov("pal", "pal"),
     os("turbo", "speed"),
     os("butter", "dblclick"),
-    os("whisper", "volume"),
+    both("whisper", "volume"),
     os("wobble", "window"),
     ov("trail", "trail"),
     os("jitter", "cursor-move"),
-    os("wall", "wallpaper"),
+    both("wall", "wallpaper"),
     os("teleport", "cursor-move"),
     ov("snow", "snow"),
     ov("fog", "fog"),
     os("upside", "display"),
-    os("beep", "volume"),
+    both("beep", "volume"),
     os("negative", "colour"),
     os("silent", "colour"),
     ov("spotlight", "spot"),
@@ -149,7 +170,14 @@ pub const PARTS: &[Part] = &[
     os("tooclose", "colour"),
     ov("confetti", "confetti"),
     ov("ghost", "ghost"),
-    // Mythic-only parts.
+    ov("static", "fuzz"),
+    ov("matrix", "matrix"),
+    ov("eyes", "eyes"),
+    ov("firefly", "firefly"),
+    ov("crack", "crack"),
+    // redpulse and doomclock only ever appear inside Mythic combos; bloodred
+    // and eclipse do too, but also back their own standalone curses
+    // (Crimson Tint, Tunnel Vision).
     os("bloodred", "colour"),
     ov("redpulse", "pulse"),
     ov("doomclock", "clock"),
@@ -160,9 +188,10 @@ pub fn part(id: &str) -> Option<&'static Part> {
     PARTS.iter().find(|p| p.id == id)
 }
 
-/// Whether this platform can run a part: everything on Windows, overlays elsewhere.
+/// Whether this platform can run a part: overlay and cross-platform parts
+/// everywhere, Windows-only parts on Windows.
 pub fn part_supported(id: &str) -> bool {
-    part(id).is_some_and(|p| cfg!(windows) || p.overlay)
+    part(id).is_some_and(|p| p.overlay || p.cross_platform || cfg!(windows))
 }
 
 /// The fixed parts of a curse (Pandemonium is chosen at claim time).
@@ -170,8 +199,6 @@ fn fixed_parts(id: &str) -> &'static [&'static str] {
     match id {
         "possession" => &["upside", "negative", "jitter", "redpulse"],
         "doom" => &["doomclock", "beep", "teleport"],
-        "bloodmoon" => &["bloodred", "spotlight", "redpulse"],
-        "eclipse" => &["sideways", "eclipse", "snow"],
         _ => &[],
     }
 }
@@ -211,8 +238,9 @@ pub fn curse_parts(id: &str, rng: &mut fastrand::Rng) -> Vec<&'static str> {
 
 /// Odds of one specific entry, as "1 in N".
 pub fn one_in(e: &Entry) -> u32 {
+    let total: u32 = TIER_ODDS.iter().sum();
     let same_tier = CATALOG.iter().filter(|d| d.tier == e.tier && available(d)).count() as f64;
-    (1000.0 * same_tier / TIER_ODDS[e.tier as usize] as f64).round() as u32
+    (total as f64 * same_tier / TIER_ODDS[e.tier as usize] as f64).round() as u32
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -461,11 +489,13 @@ mod tests {
     use std::collections::HashSet;
 
     #[test]
-    fn catalog_has_five_curses_and_two_blessings_per_tier() {
+    fn catalog_counts_follow_the_fibonacci_taper() {
+        let want_curses = [13, 8, 5, 3, 3, 3];
+        let want_bless = [5, 3, 2, 1, 1, 1];
         for t in 0..TIERS as u8 {
             let curses = CATALOG.iter().filter(|e| e.tier == t && e.is_curse()).count();
             let blessings = CATALOG.iter().filter(|e| e.tier == t && !e.is_curse()).count();
-            assert_eq!((curses, blessings), (5, 2), "tier {t}");
+            assert_eq!((curses, blessings), (want_curses[t as usize], want_bless[t as usize]), "tier {t}");
         }
         let ids: HashSet<_> = CATALOG.iter().map(|e| e.id).collect();
         assert_eq!(ids.len(), CATALOG.len(), "duplicate ids");
@@ -486,9 +516,6 @@ mod tests {
 
     #[test]
     fn pandemonium_takes_one_curse_from_each_lower_tier() {
-        if !cfg!(windows) {
-            return; // off Windows only overlay parts exist, so some tiers have nothing to pick
-        }
         let mut rng = fastrand::Rng::with_seed(8);
         let parts = curse_parts("pandemonium", &mut rng);
         let tiers: HashSet<_> = parts.iter().filter_map(|p| entry(p)).map(|e| e.tier).collect();
@@ -510,7 +537,7 @@ mod tests {
         }
         let pct = |t: usize| st.counts[t] as f64 * 1000.0 / total as f64;
         // Pity nudges the top tiers up a little, so allow for that.
-        for (t, (want, tol)) in [(500.0, 30.0), (280.0, 15.0), (140.0, 10.0), (60.0, 15.0), (16.0, 8.0), (4.0, 3.0)].iter().enumerate() {
+        for (t, (want, tol)) in [(535.3, 35.0), (267.7, 16.0), (133.8, 10.0), (44.6, 20.0), (14.9, 8.0), (3.7, 3.0)].iter().enumerate() {
             assert!((pct(t) - want).abs() < *tol, "tier {t}: {} per mille, want {want}", pct(t));
         }
         assert!(max_gap < PITY, "went {max_gap} pulls without Epic+");
@@ -566,17 +593,19 @@ mod tests {
         let mut st = State { tickets: 0, ..State::default() };
         let now = 1000;
         assert_eq!(st.claim("jackpot", now, &mut rng), Some(Claim::Blessed));
-        assert_eq!(st.tickets, 16);
+        assert_eq!(st.tickets, 3);
 
         // Free pulls don't spend tickets.
         st.claim("freespin", now, &mut rng);
         assert!(st.pull(now, 0, &mut rng, None).unwrap().free);
-        assert_eq!(st.tickets, 16);
+        assert_eq!(st.tickets, 3);
 
-        // Shields block curses one at a time, then curses land again.
+        // A shield blocks one curse, then curses land again.
         st.claim("talisman", now, &mut rng);
-        assert!(matches!(st.claim("upside", now, &mut rng), Some(Claim::Blocked(_))));
-        assert!(matches!(st.claim("upside", now, &mut rng), Some(Claim::Blocked(_))));
+        assert_eq!(
+            st.claim("upside", now, &mut rng),
+            Some(Claim::Blocked("Your shield blocked it. That was your last one.".into()))
+        );
         assert_eq!(st.claim("upside", now, &mut rng), Some(Claim::Curse(vec!["upside"])));
 
         // Immunity blocks without spending shields, until it runs out.
@@ -587,13 +616,11 @@ mod tests {
         assert!(matches!(st.claim("giant", now + 1800, &mut rng), Some(Claim::Blocked(_))));
         assert_eq!(st.shields, 0);
 
-        // Midas: free and Epic or better.
+        // Penny From Heaven: one guaranteed free Epic-or-better pull.
         let mut st = State { tickets: 0, ..State::default() };
         st.claim("midas", now, &mut rng);
-        for _ in 0..5 {
-            let o = st.pull(now, 0, &mut rng, None).unwrap();
-            assert!(o.free && o.tier >= 3, "{o:?}");
-        }
+        let o = st.pull(now, 0, &mut rng, None).unwrap();
+        assert!(o.free && o.tier >= 3, "{o:?}");
         assert_eq!(st.pull(now, 0, &mut rng, None), Err(PullError::NoTickets));
 
         // Grace refills and protects.
@@ -617,10 +644,10 @@ mod tests {
     #[test]
     fn one_in_matches_the_chances_table() {
         if !cfg!(windows) {
-            return; // off Windows, tiers shrink to the overlay curses
+            return; // off Windows, fewer curses are available per tier
         }
         let get = |id| one_in(entry(id).unwrap());
-        assert_eq!([get("giant"), get("turbo"), get("jitter"), get("upside"), get("sideways"), get("eclipse")], [14, 25, 50, 117, 438, 1750]);
+        assert_eq!([get("giant"), get("turbo"), get("jitter"), get("upside"), get("ghost"), get("doom")], [34, 41, 52, 90, 269, 1076]);
     }
 
     #[test]
