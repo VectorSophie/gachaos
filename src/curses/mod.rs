@@ -17,9 +17,19 @@ mod win32;
 #[cfg(windows)]
 use self::win32 as platform;
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+mod linux;
+#[cfg(target_os = "linux")]
+use self::linux as platform;
+
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(target_os = "macos")]
+use self::macos as platform;
+
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 mod stub;
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 use self::stub as platform;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
@@ -203,7 +213,7 @@ pub fn arrow_masks(scale: usize, size: usize) -> Vec<u8> {
 
 /// A loud 24-bit BMP for Wallpaper Heist: a magenta/lime zigzag on navy,
 /// drawn as chunky pixels.
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg_attr(not(any(windows, target_os = "linux", target_os = "macos")), allow(dead_code))]
 pub fn heist_bmp(w: u32, h: u32, px: u32) -> Vec<u8> {
     let row = (w * 3).div_ceil(4) * 4;
     let size = 54 + row * h;
