@@ -13,7 +13,7 @@ curse straight away; failing that, the next launch does.
 
 ## Odds
 
-Each tier has 5 curses and 2 blessings, all equally likely within the tier.
+Each tier's entries are equally likely within the tier.
 
 | Tier | Odds | Each entry | Curses last |
 |---|---|---|---|
