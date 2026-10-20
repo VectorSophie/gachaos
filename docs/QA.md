@@ -1,9 +1,10 @@
-# Windows QA checklist
+# QA checklist
 
-The curses change real Windows settings, so they can only be checked on a real
-Windows machine. Launch `gachaos.exe --qa` and use **Options › Force next roll**
-to pick a tier. Inside a tier the result is random, so roll until you've seen
-each entry.
+Most curses change real Windows settings, so they can only be fully checked on
+a real Windows machine; the overlay curses (\*) and the wallpaper/volume
+curses (†) can also be checked on Linux/macOS. Launch with `--qa` (or
+`GACHAOS_QA=1`) and use **Options › Force next roll** to pick a tier. Inside a
+tier the result is random, so roll until you've seen each entry.
 
 ## Getting out of a curse
 
@@ -31,34 +32,50 @@ was the one that got stuck before):
 | Sloth Mouse / Turbo Mouse | Pointer at slowest / fastest speed | Your pointer speed is back |
 | Long Tail | Mouse trails on | Trails back to how you had them |
 | Pixel Pal* | A green blob walks along the bottom of the screen | Gone |
+| Negative Space / Silent Film | Whole screen inverted / greyscale | Normal colours |
+| Crimson Tint | Whole screen washed in deep red | Normal colours |
+| Static Fuzz* | Bursts of TV static sweep the screen | Gone |
+| Matrix Drip* | Green streaks cascade down the screen | Gone |
+| Eyes Everywhere* | A scatter of eyes tracks the cursor | Gone |
+| Firefly Dusk* | Glowing dots wander and pulse | Gone |
+| Crack Spreads* | A crack grows across the screen over time | Gone |
 | Butterfingers | Double-click only works if very fast | Double-click speed back |
-| Whisper Mode | Volume drops to 10% | Volume and mute back |
+| Whisper Mode† | Volume drops to 10% | Volume and mute back |
 | Window Wobble | The window you're using shuffles a few pixels | It sits back where it was |
 | Rainbow Trail* | A pixel rainbow follows the cursor | Gone |
+| Sideways Vision | Primary display rotated 90° | Original orientation and resolution |
+| Confetti Storm* | Confetti falls | Gone |
+| Tunnel Vision* | Dark except a shrinking circle around the cursor | Gone |
 | Jitterbug Cursor | The pointer drifts on its own | No drift |
-| Wallpaper Heist | Wallpaper becomes a magenta/lime zigzag | Your wallpaper is back |
+| Wallpaper Heist† | Wallpaper becomes a magenta/lime zigzag | Your wallpaper is back |
 | Teleporter | The cursor jumps somewhere random every 3.5 s | No jumps |
 | Pixel Snow* / Fog Bank* | Snow piles up at the bottom / fog at the edges | Gone |
-| Upside-Down World / Sideways Vision | Primary display flipped 180° / rotated 90° | Original orientation and resolution |
-| Beep Storm | Volume to at least 75%, system beeps every 0.3–0.9 s | Volume back, beeps stop |
-| Negative Space / Silent Film | Whole screen inverted / greyscale | Normal colours |
+| Upside-Down World | Primary display flipped 180° | Original orientation and resolution |
+| Beep Storm† | Volume to at least 75%; on Windows, system beeps every 0.3–0.9 s too | Volume back, beeps stop |
 | Spotlight* | Dark except a circle around the cursor | Gone |
 | Disco Inferno | Wallpaper hidden, desktop colour cycles | Colour and wallpaper back |
 | Too Close | Screen zoomed 1.8×, following the cursor | Normal zoom |
-| Confetti Storm* / Ghost Hunt* | Confetti / a ghost that chases the cursor | Gone |
+| Ghost Hunt* | A ghost that chases the cursor | Gone |
 | The Possession | Upside-down + inverted colours + drifting cursor + red pulse | All of it undone |
 | Pandemonium | One curse from each lower tier at once | All of it undone |
 | Doom Clock | Giant countdown + Beep Storm + Teleporter | All of it undone |
-| Blood Moon | Screen tinted blood red + Spotlight + red pulse | All of it undone |
-| Eclipse | Sideways + a shrinking ring of light + snow | All of it undone |
 
-\* Drawn by the overlay window; click-through, so clicks reach whatever is under it.
+\* Drawn by the overlay window; click-through, so clicks reach whatever is
+under it. Works on Windows, Linux and macOS.
+
+† Changes a real OS setting, with a native implementation on Windows, Linux
+and macOS (Linux: `gsettings`/`pactl`; macOS: `osascript`).
 
 ## Blessings
 
-- [ ] Tickets blessings add tickets, even past 24.
-- [ ] Free Spin / Midas Touch: the Pull button says "(free)" and no ticket is spent.
-- [ ] Umbrella / Talisman: the next curse shows "Curse blocked" and nothing changes.
+- [ ] Tickets blessings (Pocket Change, Spare Change, Lucky Break, Windfall,
+      Mini Jackpot) add tickets, even past 24.
+- [ ] Free Spin / Penny From Heaven: the Pull button says "(free)" and no
+      ticket is spent; Penny From Heaven's pull also lands Epic or better.
+- [ ] Umbrella / Talisman: the next curse shows "Curse blocked" and nothing
+      changes. One block each.
+- [ ] Rabbit's Foot / Four-Leaf Clover: Rare+ odds roughly double for 1 / 3
+      pulls.
 - [ ] Sanctuary / Divine Grace: curses are blocked until the immunity runs out.
 
 ## Also check
@@ -74,5 +91,8 @@ was the one that got stuck before):
 
 Known things to watch: the giant cursor size depends on how Windows scales
 custom cursors, rotation depends on the display driver, and the Magnifier-based
-effects (Negative Space, Silent Film, Too Close, Blood Moon) can't run while
-Windows Magnifier is open.
+effects (Negative Space, Silent Film, Too Close, Crimson Tint) can't run while
+Windows Magnifier is open. The Linux wallpaper port assumes a GNOME-style
+`gsettings` desktop and the volume port assumes PulseAudio/PipeWire via
+`pactl`; both silently fail (logged, curse just doesn't take effect) on
+anything else.

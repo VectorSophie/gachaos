@@ -17,12 +17,12 @@ Each tier has 5 curses and 2 blessings, all equally likely within the tier.
 
 | Tier | Odds | Each entry | Curses last |
 |---|---|---|---|
-| Common | 50% | 1 in 14 | 1 min |
-| Uncommon | 28% | 1 in 25 | 2 min |
-| Rare | 14% | 1 in 50 | 4 min |
-| Epic | 6% | 1 in 117 | 6 min |
-| Legendary | 1.6% | 1 in 438 | 8 min |
-| Mythic | 0.4% | 1 in 1750 | 10 min |
+| Common | 53.5% | 1 in 34 | 1 min |
+| Uncommon | 26.8% | 1 in 41 | 2 min |
+| Rare | 13.4% | 1 in 52 | 4 min |
+| Epic | 4.46% | 1 in 90 | 6 min |
+| Legendary | 1.49% | 1 in 269 | 8 min |
+| Mythic | 0.37% | 1 in 1076 | 10 min |
 
 The 20th pull without an Epic or better is guaranteed Epic or better, and the
 90th without a Legendary or better is guaranteed Legendary or better. Tickets
@@ -32,15 +32,20 @@ refill at 1 per hour, up to 24 (blessings can take you past that).
 
 | Tier | Curses | Blessings |
 |---|---|---|
-| Common | Giant Cursor, Wrong-Handed (swapped buttons), Sloth Mouse (slowest pointer), Long Tail (mouse trails), Pixel Pal* | Pocket Change (+1 ticket), Free Spin (next pull free) |
-| Uncommon | Turbo Mouse (fastest pointer), Butterfingers (tiny double-click window), Whisper Mode (volume 10%), Window Wobble, Rainbow Trail* | Spare Change (+2), Four-Leaf Clover (2× Rare+ odds for 3 pulls) |
-| Rare | Jitterbug Cursor, Wallpaper Heist, Teleporter, Pixel Snow*, Fog Bank* | Lucky Break (+4), Umbrella (blocks 1 curse) |
-| Epic | Upside-Down World, Beep Storm, Negative Space (inverted colours), Silent Film (greyscale), Spotlight* | Windfall (+8), Talisman (blocks 2 curses) |
-| Legendary | Sideways Vision, Disco Inferno, Too Close (zoom that follows the cursor), Confetti Storm*, Ghost Hunt* | Jackpot (+16), Sanctuary (30 min immunity) |
-| Mythic | The Possession, Pandemonium, Doom Clock, Blood Moon, Eclipse (each stacks several curses at once) | Midas Touch (5 free Epic+ pulls), Divine Grace (full tickets + 2 h immunity) |
+| Common | Giant Cursor, Wrong-Handed (swapped buttons), Sloth Mouse (slowest pointer), Long Tail (mouse trails), Negative Space (inverted colours), Silent Film (greyscale), Crimson Tint (red screen wash), Pixel Pal*, Static Fuzz*, Matrix Drip*, Eyes Everywhere*, Firefly Dusk*, Crack Spreads* | Pocket Change (+1 ticket), Free Spin (next pull free), Talisman (blocks 1 curse), Penny From Heaven (next pull free, guaranteed Epic+), Rabbit's Foot (2× Rare+ odds for 1 pull) |
+| Uncommon | Turbo Mouse (fastest pointer), Butterfingers (tiny double-click window), Whisper Mode† (volume 10%), Window Wobble, Sideways Vision (90° rotation), Rainbow Trail*, Confetti Storm*, Tunnel Vision* | Spare Change (+2), Four-Leaf Clover (2× Rare+ odds for 3 pulls), Mini Jackpot (+3) |
+| Rare | Jitterbug Cursor, Wallpaper Heist†, Teleporter, Pixel Snow*, Fog Bank* | Lucky Break (+4), Umbrella (blocks 1 curse) |
+| Epic | Upside-Down World, Beep Storm†, Spotlight* | Windfall (+8) |
+| Legendary | Disco Inferno, Too Close, Ghost Hunt* | Sanctuary (30 min immunity) |
+| Mythic | The Possession, Pandemonium, Doom Clock | Divine Grace (full tickets + 2 h immunity) |
 
 \* Drawn by gachaos's own click-through overlay window rather than by changing
 a Windows setting. These work on any OS and vanish the moment gachaos closes.
+
+† Changes a real OS setting (wallpaper or system volume), with a native
+implementation on Windows, Linux and macOS. On Linux/macOS, Beep Storm only
+raises the volume — there's no portable repeating system-beep API, so the
+beeping itself stays Windows-only.
 
 ## Closing and the tray
 
@@ -56,8 +61,10 @@ a Windows setting. These work on any OS and vanish the moment gachaos closes.
 
 Grab the latest build from the [Releases page](https://github.com/VectorSophie/gachaos/releases):
 `gachaos-<version>-windows-x64.exe` (single file), a universal macOS `.dmg`, or
-a Linux `.AppImage` / `.deb`. The full roster of curses runs on Windows; on
-macOS and Linux only the overlay curses (marked * above) are available.
+a Linux `.AppImage` / `.deb`. The full roster runs on Windows; on macOS and
+Linux, the overlay curses (marked \*) and the wallpaper/volume curses (marked
+†) are available — everything else needs a Windows-only API with no portable
+equivalent.
 
 To cut a release, push a tag like `v0.3.0`, or run the **release** workflow by
 hand on `master` with the tag name (it creates the tag). It builds all three,
@@ -85,7 +92,8 @@ cargo test               # game rules, save file, curse helpers
 cargo build --release    # -> target/release/gachaos.exe (single file)
 ```
 
-CI builds `gachaos.exe` on `windows-latest` for every push. Grab it from the
+CI builds and unit-tests on Windows, Linux and macOS for every push, plus a
+headless Chromium run of the UI flow test. Grab the Windows build from the
 run's **gachaos-exe** artifact.
 
 Run with `--qa` (or `GACHAOS_QA=1`) to unlock **Options › Force next roll**,
