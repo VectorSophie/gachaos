@@ -16,15 +16,12 @@ pub fn apply(id: &str, r: &mut Restore) -> Result<Option<Worker>, String> {
             Ok(None)
         }
         "whisper" => {
-            let (vol, mute) = volume_get()?;
-            r.volume = Some((vol, mute));
-            volume_set(0.10_f32.min(vol), false)?;
+            r.volume_delta = Some(adjust_volume(-VOLUME_STEP)?);
             Ok(None)
         }
         "beep" => {
-            if let Ok((vol, mute)) = volume_get() {
-                r.volume = Some((vol, mute));
-                let _ = volume_set(vol.max(0.75), false);
+            if let Ok(delta) = adjust_volume(VOLUME_STEP) {
+                r.volume_delta = Some(delta);
             }
             Ok(None)
         }
@@ -33,8 +30,8 @@ pub fn apply(id: &str, r: &mut Restore) -> Result<Option<Worker>, String> {
 }
 
 pub fn revert(r: &Restore) {
-    if let Some((vol, mute)) = r.volume {
-        let _ = volume_set(vol, mute);
+    if let Some(delta) = r.volume_delta {
+        let _ = unapply_volume(delta);
     }
     if let Some(path) = &r.wallpaper {
         let _ = set_wallpaper(path);
@@ -50,16 +47,35 @@ fn set_wallpaper(path: &str) -> Result<(), String> {
     osascript(&[script.as_str()]).map(|_| ())
 }
 
-fn volume_get() -> Result<(f32, bool), String> {
+fn volume_get_scalar() -> Result<f32, String> {
     let vol_out = osascript(&["output volume of (get volume settings)"])?;
     let vol: f32 = vol_out.trim().parse().map_err(|_| "couldn't parse osascript volume".to_string())?;
-    let mute_out = osascript(&["output muted of (get volume settings)"])?;
-    Ok((vol / 100.0, mute_out.trim() == "true"))
+    Ok(vol / 100.0)
 }
 
-fn volume_set(vol: f32, mute: bool) -> Result<(), String> {
-    let script = format!("set volume output volume {} output muted {}", (vol * 100.0).round() as i32, mute);
+fn volume_set_scalar(vol: f32) -> Result<(), String> {
+    let script = format!("set volume output volume {} output muted false", (vol * 100.0).round() as i32);
     osascript(&[script.as_str()]).map(|_| ())
+}
+
+/// Whisper/Beep shift the current volume by this many steps per roll (0-1
+/// scale), same delta-based model as `win32.rs`'s `SPEED_STEP`/`VOLUME_STEP`.
+const VOLUME_STEP: f32 = 0.20;
+
+/// Nudges volume by `delta` and returns the delta actually applied (may be
+/// smaller than requested if clamped), for an exact revert later.
+fn adjust_volume(delta: f32) -> Result<f32, String> {
+    let current = volume_get_scalar()?;
+    let new = (current + delta).clamp(0.0, 1.0);
+    volume_set_scalar(new)?;
+    Ok(new - current)
+}
+
+/// Undoes exactly the delta `adjust_volume` applied, relative to whatever
+/// the volume is now (other stacked curses may have changed it too).
+fn unapply_volume(delta: f32) -> Result<(), String> {
+    let current = volume_get_scalar()?;
+    volume_set_scalar((current - delta).clamp(0.0, 1.0))
 }
 
 fn osascript(lines: &[&str]) -> Result<String, String> {

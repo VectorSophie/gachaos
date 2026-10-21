@@ -7,7 +7,7 @@
 // outlive a reboot until gachaos next runs to revert them. Overlay parts
 // aren't handled here: gachaos draws them in its own window (see main.rs).
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -48,12 +48,17 @@ pub struct Restore {
     pub wallpaper_dark: Option<String>,
     /// Original display orientation (0-3) and resolution.
     pub orientation: Option<(u32, u32, u32)>,
-    /// Original master volume (0-1) and mute state.
-    pub volume: Option<(f32, bool)>,
+    /// Signed delta this curse applied to master volume (0-1 scale). Reverting
+    /// subtracts it from the CURRENT value rather than restoring an absolute
+    /// original, so concurrently stacked volume curses combine and cancel
+    /// correctly regardless of apply/revert order. Mute is simply left
+    /// unmuted by these curses; the original mute state isn't tracked.
+    pub volume_delta: Option<f32>,
     /// Original desktop background colour (COLORREF).
     pub desktop_color: Option<u32>,
-    /// Original pointer speed (1-20).
-    pub mouse_speed: Option<u32>,
+    /// Signed delta this curse applied to pointer speed (1-20 scale), same
+    /// delta-based model as `volume_delta`.
+    pub mouse_speed_delta: Option<i32>,
     /// Original number of mouse trails (0 = off).
     pub trails: Option<u32>,
     /// Original double-click time in milliseconds.
@@ -76,6 +81,12 @@ impl Worker {
     }
 }
 
+/// Identifies one curse's own worker threads, so reverting it stops only
+/// those, not other curses stacked alongside it. 0 means "no workers" (the
+/// value a `#[serde(skip)]` `ActiveCurse.token` gets back from a save file,
+/// where it's meaningless anyway: workers never survive a restart).
+pub type Token = u64;
+
 /// What applying a curse's parts achieved.
 pub struct Applied {
     pub restore: Restore,
@@ -83,18 +94,21 @@ pub struct Applied {
     pub parts: Vec<String>,
     /// Parts Windows refused, with the reason.
     pub failed: Vec<(String, String)>,
+    pub token: Token,
 }
 
 #[derive(Default)]
 pub struct Runner {
-    workers: Mutex<Vec<(Arc<AtomicBool>, JoinHandle<()>)>>,
+    workers: Mutex<Vec<(Token, Arc<AtomicBool>, JoinHandle<()>)>>,
+    next_token: AtomicU64,
 }
 
 impl Runner {
     /// Applies every part it can. Stacked curses keep whatever worked; it's an
     /// error only when nothing took effect at all.
     pub fn apply(&self, parts: &[&str]) -> Result<Applied, String> {
-        let mut out = Applied { restore: Restore::default(), parts: Vec::new(), failed: Vec::new() };
+        let token = self.next_token.fetch_add(1, Ordering::Relaxed) + 1; // never 0
+        let mut out = Applied { restore: Restore::default(), parts: Vec::new(), failed: Vec::new(), token };
         for p in parts {
             if game::part(p).is_some_and(|d| d.overlay) {
                 out.parts.push(p.to_string());
@@ -105,7 +119,7 @@ impl Runner {
                 Ok(worker) => {
                     merge(&mut out.restore, r);
                     if let Some(w) = worker {
-                        self.start(w);
+                        self.start(w, token);
                     }
                     out.parts.push(p.to_string());
                 }
@@ -122,12 +136,14 @@ impl Runner {
         Ok(out)
     }
 
-    pub fn revert(&self, restore: &Restore) {
-        self.stop();
+    /// Reverts one curse: stops only the worker threads tagged with its own
+    /// `token`, leaving any other stacked curse's workers running.
+    pub fn revert(&self, token: Token, restore: &Restore) {
+        self.stop(token);
         platform::revert(restore);
     }
 
-    fn start(&self, w: Worker) {
+    fn start(&self, w: Worker, token: Token) {
         let stop = Arc::new(AtomicBool::new(false));
         let flag = stop.clone();
         let Worker { every, mut tick, finish } = w;
@@ -145,15 +161,17 @@ impl Runner {
                 f();
             }
         });
-        self.workers.lock().unwrap().push((stop, handle));
+        self.workers.lock().unwrap().push((token, stop, handle));
     }
 
-    fn stop(&self) {
-        let workers = std::mem::take(&mut *self.workers.lock().unwrap());
-        for (stop, _) in &workers {
+    fn stop(&self, token: Token) {
+        let (mine, rest): (Vec<_>, Vec<_>) =
+            std::mem::take(&mut *self.workers.lock().unwrap()).into_iter().partition(|(t, _, _)| *t == token);
+        *self.workers.lock().unwrap() = rest;
+        for (_, stop, _) in &mine {
             stop.store(true, Ordering::Relaxed);
         }
-        for (_, handle) in workers {
+        for (_, _, handle) in mine {
             let _ = handle.join();
         }
     }
@@ -171,9 +189,9 @@ fn merge(into: &mut Restore, r: Restore) {
     into.wallpaper = into.wallpaper.take().or(r.wallpaper);
     into.wallpaper_dark = into.wallpaper_dark.take().or(r.wallpaper_dark);
     into.orientation = into.orientation.or(r.orientation);
-    into.volume = into.volume.or(r.volume);
+    into.volume_delta = into.volume_delta.or(r.volume_delta);
     into.desktop_color = into.desktop_color.or(r.desktop_color);
-    into.mouse_speed = into.mouse_speed.or(r.mouse_speed);
+    into.mouse_speed_delta = into.mouse_speed_delta.or(r.mouse_speed_delta);
     into.trails = into.trails.or(r.trails);
     into.dblclick = into.dblclick.or(r.dblclick);
 }
@@ -280,20 +298,25 @@ mod tests {
     }
 
     #[test]
-    fn runner_stops_its_worker_on_revert() {
+    fn runner_stops_only_the_reverted_curses_workers() {
         let r = Runner::default();
         let hits = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let h = hits.clone();
-        r.start(Worker::new(20, move || { h.fetch_add(1, Ordering::Relaxed); }));
+        r.start(Worker::new(20, move || { h.fetch_add(1, Ordering::Relaxed); }), 1);
         let finished = Arc::new(AtomicBool::new(false));
         let f = finished.clone();
-        r.start(Worker { finish: Some(Box::new(move || f.store(true, Ordering::Relaxed))), ..Worker::new(20, || {}) });
+        r.start(Worker { finish: Some(Box::new(move || f.store(true, Ordering::Relaxed))), ..Worker::new(20, || {}) }, 1);
+        // A second curse's worker, stacked alongside the first under a different token.
+        let other_hits = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let oh = other_hits.clone();
+        r.start(Worker::new(20, move || { oh.fetch_add(1, Ordering::Relaxed); }), 2);
         std::thread::sleep(Duration::from_millis(120));
-        r.revert(&Restore::default());
+        r.revert(1, &Restore::default());
         let after = hits.load(Ordering::Relaxed);
         assert!(after > 0);
         assert!(finished.load(Ordering::Relaxed), "finish ran on revert");
         std::thread::sleep(Duration::from_millis(80));
-        assert_eq!(hits.load(Ordering::Relaxed), after);
+        assert_eq!(hits.load(Ordering::Relaxed), after, "token 1's worker stayed stopped");
+        assert!(other_hits.load(Ordering::Relaxed) > 0, "token 2's worker kept running, unaffected by token 1's revert");
     }
 }

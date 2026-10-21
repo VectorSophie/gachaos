@@ -3,7 +3,7 @@
 // unit-tested on any platform.
 use serde::{Deserialize, Serialize};
 
-use crate::curses::Restore;
+use crate::curses::{Restore, Token};
 
 pub const TICKET_CAP: u32 = 24;
 pub const REGEN_SECS: u64 = 3600; // +1 ticket per hour
@@ -19,7 +19,7 @@ pub const TIER_ODDS: [u32; TIERS] = [432, 216, 108, 36, 12, 3];
 pub const TIER_NAMES: [&str; TIERS] = ["Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic"];
 /// How long a curse of each tier lasts.
 pub const TIER_SECS: [u64; TIERS] = [60, 120, 240, 360, 480, 600];
-pub const SAVE_VERSION: u32 = 2;
+pub const SAVE_VERSION: u32 = 3;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Boon {
@@ -262,6 +262,28 @@ pub struct ActiveCurse {
     pub until: u64,
     /// Everything needed to undo it, persisted so a crash can still be undone.
     pub restore: Restore,
+    /// Identifies this curse's own worker threads, so reverting it (on its
+    /// own expiry, or by name) stops only those, leaving any other stacked
+    /// curse's workers running. Runtime-only: workers never survive a
+    /// restart, so this isn't persisted and always reads back as 0.
+    #[serde(skip, default)]
+    pub token: Token,
+}
+
+/// Accepts either the pre-stacking shape (`null` or one curse object) or the
+/// current one (a list), so old saves migrate instead of getting discarded
+/// as corrupt.
+fn de_active<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<ActiveCurse>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Shape {
+        One(Option<ActiveCurse>),
+        Many(Vec<ActiveCurse>),
+    }
+    Ok(match Shape::deserialize(d)? {
+        Shape::One(one) => one.into_iter().collect(),
+        Shape::Many(many) => many,
+    })
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -282,7 +304,10 @@ pub struct State {
     pub best_name: String,
     pub history: Vec<PullRecord>,
     pub sound: bool,
-    pub active: Option<ActiveCurse>,
+    /// Curses stack: every active one keeps running (and ticking down on its
+    /// own timer) until it expires or is cured, independent of the others.
+    #[serde(deserialize_with = "de_active")]
+    pub active: Vec<ActiveCurse>,
     // Blessings in effect.
     pub free_pulls: u32,
     pub luck_pulls: u32,
@@ -306,7 +331,7 @@ impl Default for State {
             best_name: String::new(),
             history: Vec::new(),
             sound: true,
-            active: None,
+            active: Vec::new(),
             free_pulls: 0,
             luck_pulls: 0,
             midas: 0,
@@ -355,9 +380,12 @@ impl State {
                 3 => 4,
                 b => b,
             };
-            self.version = 2;
         }
+        // Versions 2 and 3 differ only in `active`'s JSON shape (one curse ->
+        // a stack), which `de_active` already normalizes on load regardless
+        // of this version number.
         self.counts.resize(TIERS, 0);
+        self.version = SAVE_VERSION;
     }
 
     /// Adds tickets from wall-clock time, so they accrue while the app is closed.
@@ -671,14 +699,25 @@ mod tests {
     }
 
     #[test]
+    fn old_single_curse_saves_still_load_into_the_stack() {
+        let none: State = serde_json::from_str(r#"{"active":null}"#).unwrap();
+        assert_eq!(none.active, Vec::new());
+        let one: State = serde_json::from_str(r#"{"active":{"id":"wall","until":5,"restore":{}}}"#).unwrap();
+        assert_eq!(one.active.len(), 1);
+        assert_eq!(one.active[0].id, "wall");
+        assert_eq!(one.active[0].until, 5);
+    }
+
+    #[test]
     fn save_round_trips() {
         let mut st = State { pity: 7, shields: 2, ..State::default() };
-        st.active = Some(ActiveCurse {
+        st.active = vec![ActiveCurse {
             id: "wall".into(),
             parts: vec!["wall".into()],
             until: 5,
             restore: Restore { wallpaper: Some("C:\\x.jpg".into()), ..Default::default() },
-        });
+            token: 0,
+        }];
         let json = serde_json::to_string(&st).unwrap();
         assert_eq!(serde_json::from_str::<State>(&json).unwrap(), st);
     }

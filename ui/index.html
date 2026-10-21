@@ -774,9 +774,10 @@ function tickClock(){
   if(snap.nextTicketAtMs==null) ui.next.textContent='Tickets full';
   else { const s=Math.max(0,Math.ceil((snap.nextTicketAtMs-Date.now())/1000)); ui.next.textContent=`Next ticket ${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
     if(s===0&&!reloading&&!S.busy){ reloading=true; invoke('get_state').then(applySnap).finally(()=>reloading=false); } }
-  const a=snap.active, c=a&&byId[a.id];
+  const a=snap.active[snap.active.length-1], c=a&&byId[a.id];
   ui.curseBox.hidden=!c;
-  if(c){ const left=Math.max(0,Math.ceil((a.untilMs-Date.now())/1000)); ui.curseT.textContent=`${c.name} ${fmtDur(left)}`; }
+  if(c){ const left=Math.max(0,Math.ceil((a.untilMs-Date.now())/1000)); const more=snap.active.length-1;
+    ui.curseT.textContent=`${c.name} ${fmtDur(left)}${more>0?` (+${more} more)`:''}`; }
   const bt=boonsText(); ui.boons.textContent=bt; ui.boons.hidden=!bt;
 }
 function selectTab(id){ for(const t of ['slots','history','chances','stats']){ const on=t===id; $('tab-'+t).setAttribute('aria-selected',String(on)); $('panel-'+t).hidden=!on; } }
@@ -813,20 +814,24 @@ document.addEventListener('click',async e=>{
   else if(a==='min') TAURI.window.getCurrentWindow().minimize();
   else if(a==='max'){ if(mode==='mini') setMode('full'); else A.blip(); }
 });
-async function cureAll(){ const had=snap&&snap.active; applySnap(await invoke('cure_all')); if(had&&byId[had.id]){ setStatus(`Cured: ${byId[had.id].name}`); A.ding(); } else setStatus('Nothing to cure'); }
+async function cureAll(){ const had=snap&&snap.active||[]; applySnap(await invoke('cure_all'));
+  if(had.length===1&&byId[had[0].id]){ setStatus(`Cured: ${byId[had[0].id].name}`); A.ding(); }
+  else if(had.length>1){ setStatus(`Cured ${had.length} curses`); A.ding(); }
+  else setStatus('Nothing to cure'); }
 
 // Closing the window keeps gachaos in the tray. With a curse running, ask first:
 // otherwise the curse keeps going with no window in sight.
 function closeFlow(){
   closeMenus();
   if(S.busy) return;
-  const a=snap&&snap.active, c=a&&byId[a.id];
+  const active=(snap&&snap.active)||[], a=active[active.length-1], c=a&&byId[a.id];
   if(mode==='mini'||!c){ invoke('hide_to_tray'); return; }
-  const left=Math.max(0,Math.ceil((a.untilMs-Date.now())/1000));
+  const left=Math.max(0,Math.ceil((a.untilMs-Date.now())/1000)), more=active.length-1;
   const d=dialog({title:'Close gachaos?',icon:'warn',
-    html:`<p><b></b> is still active, with <span class="left"></span> left.</p><p class="meta">If you keep it, gachaos waits in the tray until it wears off. Ctrl+Alt+P cures it any time.</p>`,
+    html:`<p><b></b> is still active, with <span class="left"></span> left<span class="more"></span>.</p><p class="meta">If you keep it, gachaos waits in the tray until it wears off. Ctrl+Alt+P cures all of it any time.</p>`,
     buttons:[{label:'Cure and close',fn:async()=>{ await cureAll(); invoke('hide_to_tray'); }},{label:'Keep it',fn:()=>invoke('hide_to_tray')}]});
   d.querySelector('.msg b').textContent=c.name; d.querySelector('.left').textContent=fmtDur(left);
+  d.querySelector('.more').textContent=more>0?` (+${more} more stacked)`:'';
 }
 
 // Full window, or the compact flyout that opens from the tray icon.
@@ -1060,7 +1065,7 @@ TAURI.window.getCurrentWindow().onFocusChanged(({payload:focused})=>{
   const b=ui.app.getBoundingClientRect();
   await invoke('fit_window',{w:Math.ceil(b.width),h:Math.ceil(b.height),anchor:null});
   layoutFX();
-  if(s.recovered) dialog({title:'gachaos',icon:'info',html:`<p>gachaos was closed while a curse was active, so it has been undone.</p><p class="meta"></p>`}).querySelector('.meta').textContent=s.recovered;
+  if(s.recovered) dialog({title:'gachaos',icon:'info',html:`<p>gachaos was closed while curses were active, so they've been undone.</p><p class="meta"></p>`}).querySelector('.meta').textContent=s.recovered;
   window.GACHAOS={pull,setForce,setMode,closeFlow,S,O};
   requestAnimationFrame(frame);
 })();

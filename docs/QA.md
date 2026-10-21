@@ -13,6 +13,25 @@ headless CI runner. `cargo test` already covers `linux.rs`'s own logic
 natively; the visual check is a "whenever you have a real Linux desktop
 handy" item, not a release blocker.
 
+## Curses now stack
+
+Rolling again no longer replaces the active curse — it stacks on top, and
+both run until cured. Mouse speed and volume stack numerically: rolling
+Turbo Mouse twice is 2 steps faster, then rolling Sloth Mouse once pulls it
+back by 1 step (deltas cancel against whatever the OS value is now, in any
+order). Everything else (overlay effects, display rotation, wallpaper,
+Window Wobble, etc.) just layers independently — e.g. roll Pixel Pal then
+Rainbow Trail and both show at once.
+
+- [ ] Roll Turbo Mouse, then roll it again while it's still active: pointer
+      should feel faster each time (2 steps faster than baseline).
+- [ ] Roll Turbo Mouse, then roll Sloth Mouse: speed should land 1 step
+      faster than baseline, not reset to Sloth's absolute slowest.
+- [ ] Roll two different overlay curses back to back (e.g. Pixel Pal +
+      Rainbow Trail): confirm both render at once.
+- [ ] `Ctrl+Alt+Z` cures only the most recently applied curse ("layer"),
+      leaving earlier ones running.
+
 ## Getting out of a curse
 
 Check each of these with a curse running (Jitterbug Cursor is a good one, it
@@ -20,7 +39,8 @@ was the one that got stuck before):
 
 - [ ] **Close button**: ✕ asks "Close gachaos?". **Cure and close** undoes it
       at once; **Keep it** hides to the tray and the tray tooltip counts down.
-- [ ] **Panic hotkey**: `Ctrl+Alt+P` cures, including while hidden in the tray.
+- [ ] **Panic hotkey**: `Ctrl+Alt+P` cures everything stacked, including while
+      hidden in the tray. `Ctrl+Alt+Z` cures just the newest layer instead.
 - [ ] **Tray**: right-click › Cure all, and right-click › Quit both undo it.
 - [ ] **Killed**: end `gachaos.exe` in Task Manager. The watchdog should undo
       the curse within a second. (If Task Manager kills the watchdog too, the

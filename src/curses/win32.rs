@@ -47,8 +47,8 @@ pub fn apply(id: &str, r: &mut Restore) -> Result<Option<Worker>, String> {
             Ok(None)
         }
         "sloth" | "turbo" => {
-            r.mouse_speed = Some(get_mouse_speed()?);
-            set_mouse_speed(if id == "sloth" { 1 } else { 20 })?;
+            let delta = if id == "sloth" { -SPEED_STEP } else { SPEED_STEP };
+            r.mouse_speed_delta = Some(adjust_mouse_speed(delta)?);
             Ok(None)
         }
         "trails" => {
@@ -62,9 +62,7 @@ pub fn apply(id: &str, r: &mut Restore) -> Result<Option<Worker>, String> {
             Ok(None)
         }
         "whisper" => {
-            let (vol, mute) = volume_get().map_err(|e| format!("couldn't reach the speakers: {e}"))?;
-            r.volume = Some((vol, mute));
-            volume_set(0.10_f32.min(vol), false).map_err(|e| format!("couldn't change the volume: {e}"))?;
+            r.volume_delta = Some(adjust_volume(-VOLUME_STEP).map_err(|e| format!("couldn't reach the speakers: {e}"))?);
             Ok(None)
         }
         "wobble" => Ok(Some(wobble())),
@@ -87,9 +85,8 @@ pub fn apply(id: &str, r: &mut Restore) -> Result<Option<Worker>, String> {
         }
         "beep" => {
             // Volume is best-effort: some machines have no default output device.
-            if let Ok((vol, mute)) = volume_get() {
-                r.volume = Some((vol, mute));
-                let _ = volume_set(vol.max(0.75), false);
+            if let Ok(delta) = adjust_volume(VOLUME_STEP) {
+                r.volume_delta = Some(delta);
             }
             Ok(Some(beeps()))
         }
@@ -114,8 +111,8 @@ pub fn revert(r: &Restore) {
     if let Some(was) = r.swap {
         unsafe { let _ = SwapMouseButton(was); }
     }
-    if let Some(speed) = r.mouse_speed {
-        let _ = set_mouse_speed(speed);
+    if let Some(delta) = r.mouse_speed_delta {
+        let _ = unapply_mouse_speed(delta);
     }
     if let Some(n) = r.trails {
         let _ = set_trails(n);
@@ -126,8 +123,8 @@ pub fn revert(r: &Restore) {
     if let Some((orient, w, h)) = r.orientation {
         let _ = set_orientation(orient, w, h);
     }
-    if let Some((vol, mute)) = r.volume {
-        let _ = volume_set(vol, mute);
+    if let Some(delta) = r.volume_delta {
+        let _ = unapply_volume(delta);
     }
     if let Some(c) = r.desktop_color {
         set_desktop_color(c);
@@ -167,6 +164,27 @@ fn set_mouse_speed(v: u32) -> Result<(), String> {
     // SPI_SETMOUSESPEED takes the value itself in the pointer argument.
     unsafe { SystemParametersInfoW(SPI_SETMOUSESPEED, 0, Some(v as usize as *mut c_void), SESSION_ONLY) }
         .map_err(|e| format!("couldn't change pointer speed: {e}"))
+}
+
+/// Sloth/Turbo shift the current pointer speed by this many steps per roll,
+/// rather than jumping to an absolute extreme, so stacked rolls (and the
+/// opposite curse) combine and cancel: current + delta, clamped to 1-20.
+const SPEED_STEP: i32 = 6;
+
+/// Nudges pointer speed by `delta` and returns the delta actually applied
+/// (may be smaller than requested if clamped), for an exact revert later.
+fn adjust_mouse_speed(delta: i32) -> Result<i32, String> {
+    let current = get_mouse_speed()? as i32;
+    let new = (current + delta).clamp(1, 20);
+    set_mouse_speed(new as u32)?;
+    Ok(new - current)
+}
+
+/// Undoes exactly the delta `adjust_mouse_speed` applied, relative to
+/// whatever the speed is now (other stacked curses may have changed it too).
+fn unapply_mouse_speed(delta: i32) -> Result<(), String> {
+    let current = get_mouse_speed()? as i32;
+    set_mouse_speed((current - delta).clamp(1, 20) as u32)
 }
 
 fn get_trails() -> Result<u32, String> {
@@ -423,16 +441,30 @@ fn endpoint() -> windows::core::Result<IAudioEndpointVolume> {
     }
 }
 
-fn volume_get() -> windows::core::Result<(f32, bool)> {
-    let ep = endpoint()?;
-    unsafe { Ok((ep.GetMasterVolumeLevelScalar()?, ep.GetMute()?.as_bool())) }
-}
+/// Whisper/Beep shift the current volume by this many steps per roll (0-1
+/// scale), same delta-based model as `SPEED_STEP`.
+const VOLUME_STEP: f32 = 0.20;
 
-fn volume_set(vol: f32, mute: bool) -> windows::core::Result<()> {
+/// Nudges master volume by `delta`, force-unmuting, and returns the delta
+/// actually applied (may be smaller than requested if clamped).
+fn adjust_volume(delta: f32) -> windows::core::Result<f32> {
     let ep = endpoint()?;
     unsafe {
-        ep.SetMasterVolumeLevelScalar(vol, std::ptr::null())?;
-        ep.SetMute(mute, std::ptr::null())
+        let current = ep.GetMasterVolumeLevelScalar()?;
+        let new = (current + delta).clamp(0.0, 1.0);
+        ep.SetMasterVolumeLevelScalar(new, std::ptr::null())?;
+        ep.SetMute(false, std::ptr::null())?;
+        Ok(new - current)
+    }
+}
+
+/// Undoes exactly the delta `adjust_volume` applied, relative to whatever
+/// the volume is now (other stacked curses may have changed it too).
+fn unapply_volume(delta: f32) -> windows::core::Result<()> {
+    let ep = endpoint()?;
+    unsafe {
+        let current = ep.GetMasterVolumeLevelScalar()?;
+        ep.SetMasterVolumeLevelScalar((current - delta).clamp(0.0, 1.0), std::ptr::null())
     }
 }
 

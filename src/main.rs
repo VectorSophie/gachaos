@@ -102,7 +102,8 @@ struct Snapshot {
     sound: bool,
     qa: bool,
     next_ticket_at_ms: Option<u64>,
-    active: Option<ActiveDto>,
+    /// Every curse currently stacked, most-recently-applied last.
+    active: Vec<ActiveDto>,
     boons: Boons,
     recovered: Option<String>,
     tiers: [&'static str; game::TIERS],
@@ -127,7 +128,7 @@ fn snapshot(ctx: &Ctx, core: &mut Core) -> Snapshot {
         sound: st.sound,
         qa: ctx.qa,
         next_ticket_at_ms: st.next_ticket_at().map(|s| s * 1000),
-        active: st.active.as_ref().map(|a| ActiveDto { id: a.id.clone(), until_ms: a.until * 1000, parts: a.parts.clone() }),
+        active: st.active.iter().map(|a| ActiveDto { id: a.id.clone(), until_ms: a.until * 1000, parts: a.parts.clone() }).collect(),
         boons: Boons {
             free_pulls: st.free_pulls,
             luck_pulls: st.luck_pulls,
@@ -153,11 +154,25 @@ fn snapshot(ctx: &Ctx, core: &mut Core) -> Snapshot {
     }
 }
 
-/// Reverts the active curse, if any. Returns true when something was undone.
-fn cure_locked(ctx: &Ctx, core: &mut Core) -> bool {
-    match core.st.active.take() {
+/// Reverts every stacked curse. Returns true when anything was undone.
+fn cure_all_locked(ctx: &Ctx, core: &mut Core) -> bool {
+    let active = std::mem::take(&mut core.st.active);
+    if active.is_empty() {
+        return false;
+    }
+    for a in active {
+        ctx.runner.revert(a.token, &a.restore);
+    }
+    ctx.save(&core.st);
+    true
+}
+
+/// Reverts just the most-recently-applied curse, leaving any others stacked
+/// beneath it running. Returns true when anything was undone.
+fn cure_one_locked(ctx: &Ctx, core: &mut Core) -> bool {
+    match core.st.active.pop() {
         Some(a) => {
-            ctx.runner.revert(&a.restore);
+            ctx.runner.revert(a.token, &a.restore);
             ctx.save(&core.st);
             true
         }
@@ -165,12 +180,41 @@ fn cure_locked(ctx: &Ctx, core: &mut Core) -> bool {
     }
 }
 
+/// Reverts whichever stacked curses have individually run out their own
+/// timer, leaving any others (rolled more recently, or a longer tier) still
+/// running. Returns true when anything was undone.
+fn revert_expired_locked(ctx: &Ctx, core: &mut Core) -> bool {
+    let now = now_secs();
+    let (expired, still_active): (Vec<_>, Vec<_>) = std::mem::take(&mut core.st.active).into_iter().partition(|a| now >= a.until);
+    core.st.active = still_active;
+    if expired.is_empty() {
+        return false;
+    }
+    for a in expired {
+        ctx.runner.revert(a.token, &a.restore);
+    }
+    ctx.save(&core.st);
+    true
+}
+
 /// Cures everything and tells the UI. Used by the hotkey, the tray, quitting
 /// and a second launch with `--cure`.
 fn cure_all_and_notify(app: &AppHandle) {
     let ctx = app.state::<Ctx>();
     let mut core = ctx.core.lock().unwrap();
-    cure_locked(&ctx, &mut core);
+    cure_all_locked(&ctx, &mut core);
+    let snap = snapshot(&ctx, &mut core);
+    drop(core);
+    sync_overlay(app);
+    let _ = app.emit("state", snap);
+}
+
+/// Cures just the most recent layer and tells the UI. Used by the
+/// Ctrl+Alt+Z hotkey and the matching tray entry.
+fn cure_one_and_notify(app: &AppHandle) {
+    let ctx = app.state::<Ctx>();
+    let mut core = ctx.core.lock().unwrap();
+    cure_one_locked(&ctx, &mut core);
     let snap = snapshot(&ctx, &mut core);
     drop(core);
     sync_overlay(app);
@@ -193,14 +237,20 @@ struct OverlayState {
     cursor: Option<(f64, f64)>,
 }
 
+/// The union of every stacked curse's overlay-drawn parts, so multiple
+/// overlay effects pile up visually. `until_ms` is the soonest of their
+/// expiries: good enough for the one overlay effect (Tunnel Vision) whose
+/// animation scales with time remaining, even if it isn't the soonest to end.
 fn overlay_parts(st: &game::State) -> (Vec<String>, u64) {
-    match &st.active {
-        Some(a) => (
-            a.parts.iter().filter(|p| game::part(p).is_some_and(|d| d.overlay)).cloned().collect(),
-            a.until * 1000,
-        ),
-        None => (Vec::new(), 0),
-    }
+    let parts = st
+        .active
+        .iter()
+        .flat_map(|a| a.parts.iter())
+        .filter(|p| game::part(p).is_some_and(|d| d.overlay))
+        .cloned()
+        .collect();
+    let until_ms = st.active.iter().map(|a| a.until * 1000).min().unwrap_or(0);
+    (parts, until_ms)
 }
 
 /// Shows the overlay over the main window's monitor while a drawn curse is
@@ -262,24 +312,19 @@ struct PullDto {
 }
 
 #[tauri::command]
-fn pull(app: AppHandle, ctx: State<Ctx>, force: Option<u8>) -> Result<PullDto, String> {
-    let (dto, cured) = {
+fn pull(_app: AppHandle, ctx: State<Ctx>, force: Option<u8>) -> Result<PullDto, String> {
+    // Curses stack: pulling again doesn't disturb whatever's already active.
+    let dto = {
         let mut guard = ctx.core.lock().unwrap();
         let core = &mut *guard;
-        // One curse at a time: a new pull lifts the old one first.
-        let cured = cure_locked(&ctx, core);
         let force = if ctx.qa { force } else { None };
         let out = core.st.pull(now_secs(), now_ms(), &mut core.rng, force).map_err(|e| match e {
             PullError::NoTickets => "no_tickets".to_string(),
         })?;
         core.pending = Some(out.id);
         ctx.save(&core.st);
-        let dto = PullDto { tier: out.tier, id: out.id, forced_by_pity: out.forced_by_pity, free: out.free, state: snapshot(&ctx, core) };
-        (dto, cured)
+        PullDto { tier: out.tier, id: out.id, forced_by_pity: out.forced_by_pity, free: out.free, state: snapshot(&ctx, core) }
     };
-    if cured {
-        sync_overlay(&app);
-    }
     Ok(dto)
 }
 
@@ -311,7 +356,8 @@ fn claim(app: AppHandle, ctx: State<Ctx>, id: String) -> Result<ClaimDto, String
             Claim::Blessed => ("blessed", None, Vec::new()),
             Claim::Blocked(msg) => ("blocked", Some(msg), Vec::new()),
             Claim::Curse(parts) => {
-                cure_locked(&ctx, core);
+                // Stacks on top of whatever's already active, rather than
+                // replacing it.
                 let applied = match ctx.runner.apply(&parts) {
                     Ok(a) => a,
                     Err(e) => {
@@ -320,11 +366,12 @@ fn claim(app: AppHandle, ctx: State<Ctx>, id: String) -> Result<ClaimDto, String
                     }
                 };
                 let tier = game::entry(id).map(|e| e.tier as usize).unwrap_or(0);
-                core.st.active = Some(game::ActiveCurse {
+                core.st.active.push(game::ActiveCurse {
                     id: id.into(),
                     parts: applied.parts,
                     until: now_secs() + TIER_SECS[tier],
                     restore: applied.restore,
+                    token: applied.token,
                 });
                 let failed = applied.failed.into_iter().map(|(p, e)| format!("{p}: {e}")).collect();
                 ("cursed", None, failed)
@@ -340,7 +387,18 @@ fn claim(app: AppHandle, ctx: State<Ctx>, id: String) -> Result<ClaimDto, String
 #[tauri::command]
 fn cure_all(app: AppHandle, ctx: State<Ctx>) -> Snapshot {
     let mut core = ctx.core.lock().unwrap();
-    cure_locked(&ctx, &mut core);
+    cure_all_locked(&ctx, &mut core);
+    let snap = snapshot(&ctx, &mut core);
+    drop(core);
+    sync_overlay(&app);
+    snap
+}
+
+/// Cures just the most recently applied curse, from the UI.
+#[tauri::command]
+fn cure_one(app: AppHandle, ctx: State<Ctx>) -> Snapshot {
+    let mut core = ctx.core.lock().unwrap();
+    cure_one_locked(&ctx, &mut core);
     let snap = snapshot(&ctx, &mut core);
     drop(core);
     sync_overlay(&app);
@@ -371,7 +429,7 @@ fn qa_reset(app: AppHandle, ctx: State<Ctx>) -> Result<Snapshot, String> {
         return Err("QA mode is off".into());
     }
     let mut core = ctx.core.lock().unwrap();
-    cure_locked(&ctx, &mut core);
+    cure_all_locked(&ctx, &mut core);
     let sound = core.st.sound;
     core.st = game::State { sound, ..Default::default() };
     ctx.save(&core.st);
@@ -475,10 +533,12 @@ fn ui_log(msg: String) {
 
 fn tooltip(st: &game::State) -> String {
     let mut t = format!("gachaos · {} tickets", st.tickets);
-    if let Some(a) = &st.active {
-        let left = a.until.saturating_sub(now_secs());
-        let name = game::entry(&a.id).map(|e| e.name).unwrap_or("Curse");
-        t += &format!("\n{name}: {}:{:02} left (Ctrl+Alt+P cures)", left / 60, left % 60);
+    if let Some(top) = st.active.last() {
+        let left = top.until.saturating_sub(now_secs());
+        let name = game::entry(&top.id).map(|e| e.name).unwrap_or("Curse");
+        let more = st.active.len() - 1;
+        let suffix = if more > 0 { format!(" +{more} more (Ctrl+Alt+Z cures this one)") } else { String::new() };
+        t += &format!("\n{name}: {}:{:02} left{suffix} (Ctrl+Alt+P cures all)", left / 60, left % 60);
     }
     t
 }
@@ -499,8 +559,11 @@ fn run_watchdog(pid: u32, save_path: PathBuf) {
     }
     std::thread::sleep(Duration::from_millis(300)); // let a clean quit finish saving
     let mut st = save::load(&save_path);
-    if let Some(a) = st.active.take() {
-        curses::revert_saved(&a.restore);
+    let active = std::mem::take(&mut st.active);
+    if !active.is_empty() {
+        for a in active {
+            curses::revert_saved(&a.restore);
+        }
         save::store(&save_path, &st);
     }
 }
@@ -531,13 +594,22 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let mut st = save::load(&save_path);
     let runner = curses::Runner::default();
 
-    // If the app died while a curse was active, undo it now: we can't know
-    // how much time was left, so leaving it on would be worse.
-    let mut recovered = None;
-    if let Some(a) = st.active.take() {
-        curses::revert_saved(&a.restore);
-        recovered = game::entry(&a.id).map(|c| c.name.to_string());
-    }
+    // If the app died with curses active, undo them now: we can't know how
+    // much time was left, so leaving them on would be worse.
+    let recovered_curses = std::mem::take(&mut st.active);
+    let recovered = match recovered_curses.len() {
+        0 => None,
+        _ => {
+            let names: Vec<_> = recovered_curses
+                .iter()
+                .map(|a| {
+                    curses::revert_saved(&a.restore);
+                    game::entry(&a.id).map(|c| c.name.to_string()).unwrap_or_else(|| a.id.clone())
+                })
+                .collect();
+            Some(names.join(", "))
+        }
+    };
     save::store(&save_path, &st);
 
     // `gachaos --cure` with no copy running: recovery above did the job.
@@ -578,8 +650,9 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     // Tray: the app lives here when its window is closed.
     let open = MenuItem::with_id(app, "open", "Open gachaos", true, None::<&str>)?;
     let cure = MenuItem::with_id(app, "cure", "Cure all curses (Ctrl+Alt+P)", true, None::<&str>)?;
+    let cure_one = MenuItem::with_id(app, "cure_one", "Cure most recent curse (Ctrl+Alt+Z)", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit (cures curses)", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&open, &cure, &quit])?;
+    let menu = Menu::with_items(app, &[&open, &cure, &cure_one, &quit])?;
     let mut tray = TrayIconBuilder::with_id("tray")
         .tooltip("gachaos")
         .menu(&menu)
@@ -587,6 +660,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .on_menu_event(|app, e| match e.id.as_ref() {
             "open" => show_main(app, "full"),
             "cure" => cure_all_and_notify(app),
+            "cure_one" => cure_one_and_notify(app),
             "quit" => {
                 cure_all_and_notify(app);
                 app.exit(0);
@@ -611,10 +685,15 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     }
     tray.build(app)?;
 
-    // Panic hotkey, reachable even while the window is hidden.
+    // Panic hotkeys, reachable even while the window is hidden: P cures
+    // everything stacked, Z peels off just the most recent layer.
     let panic_key = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyP);
     if let Err(e) = app.global_shortcut().register(panic_key) {
         eprintln!("gachaos: couldn't register Ctrl+Alt+P: {e}");
+    }
+    let layer_key = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyZ);
+    if let Err(e) = app.global_shortcut().register(layer_key) {
+        eprintln!("gachaos: couldn't register Ctrl+Alt+Z: {e}");
     }
 
     // The UI shows the window once it has sized it. If that never happens
@@ -638,8 +717,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             std::thread::sleep(Duration::from_millis(500));
             let ctx = handle.state::<Ctx>();
             let mut core = ctx.core.lock().unwrap();
-            let expired = core.st.active.as_ref().is_some_and(|a| now_secs() >= a.until);
-            let snap = (expired && cure_locked(&ctx, &mut core)).then(|| snapshot(&ctx, &mut core));
+            let snap = revert_expired_locked(&ctx, &mut core).then(|| snapshot(&ctx, &mut core));
             let tip = tooltip(&core.st);
             drop(core);
             if let Some(snap) = snap {
@@ -681,8 +759,14 @@ fn main() {
         }))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, _shortcut, event| {
-                    if event.state() == ShortcutState::Pressed {
+                .with_handler(|app, shortcut, event| {
+                    if event.state() != ShortcutState::Pressed {
+                        return;
+                    }
+                    let layer_key = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyZ);
+                    if *shortcut == layer_key {
+                        cure_one_and_notify(app);
+                    } else {
                         cure_all_and_notify(app);
                     }
                 })
@@ -699,7 +783,7 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            get_state, pull, claim, cure_all, set_sound, qa_refill, qa_reset, fit_window, fx_expand, fx_restore,
+            get_state, pull, claim, cure_all, cure_one, set_sound, qa_refill, qa_reset, fit_window, fx_expand, fx_restore,
             hide_to_tray, quit, ui_log, overlay_state
         ])
         .build(tauri::generate_context!())
@@ -710,7 +794,7 @@ fn main() {
             // Never leave a curse behind.
             if let Some(ctx) = app.try_state::<Ctx>() {
                 let mut core = ctx.core.lock().unwrap();
-                cure_locked(&ctx, &mut core);
+                cure_all_locked(&ctx, &mut core);
             }
         }
     });

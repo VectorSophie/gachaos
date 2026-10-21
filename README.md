@@ -6,13 +6,18 @@ blesses) your desktop, and the rarer the roll, the louder the reveal. Common
 rolls stay inside the reels. Epic and up break out of the window and take over
 the screen, and Mythic shatters the window itself.
 
-Every curse undoes itself. `Ctrl+Alt+P` undoes all of them at once, even from
-the tray. If gachaos is killed mid-curse, a small watchdog process undoes the
-curse straight away; failing that, the next launch does. On Windows nothing is
-saved to your profile, so a reboot also undoes everything; on Linux and macOS,
-wallpaper and volume curses change real desktop settings that *can* survive a
-reboot if gachaos never gets to revert them first — relaunching it (or
-`gachaos --cure`) always cures a leftover one.
+Rolling again doesn't replace the active curse — it stacks on top, so keep
+rolling for more chaos. Mouse speed and volume stack numerically (two Turbo
+Mouse rolls is twice as fast; a Sloth Mouse roll on top pulls it back by one
+step); everything else just layers independently. `Ctrl+Alt+P` undoes all of
+them at once, even from the tray; `Ctrl+Alt+Z` undoes just the most
+recently applied one. If gachaos is killed mid-curse, a small watchdog
+process undoes every active curse straight away; failing that, the next
+launch does. On Windows nothing is saved to your profile, so a reboot also
+undoes everything; on Linux and macOS, wallpaper and volume curses change
+real desktop settings that *can* survive a reboot if gachaos never gets to
+revert them first — relaunching it (or `gachaos --cure`) always cures any
+leftover ones.
 
 ## Odds
 
