@@ -120,8 +120,8 @@ pub fn revert(r: &Restore) {
     if let Some(ms) = r.dblclick {
         unsafe { let _ = SetDoubleClickTime(ms); }
     }
-    if let Some((orient, w, h)) = r.orientation {
-        let _ = set_orientation(orient, w, h);
+    if let Some(turns) = r.orientation_turns {
+        let _ = unrotate(turns);
     }
     if let Some(delta) = r.volume_delta {
         let _ = unapply_volume(delta);
@@ -412,12 +412,21 @@ fn current_mode() -> Result<DEVMODEW, String> {
 fn rotate(r: &mut Restore, quarter_turns: u32) -> Result<(), String> {
     let dm = current_mode()?;
     let orient = unsafe { dm.Anonymous1.Anonymous2.dmDisplayOrientation.0 };
-    r.orientation = Some((orient, dm.dmPelsWidth, dm.dmPelsHeight));
     let (w, h) = if quarter_turns % 2 == 1 { (dm.dmPelsHeight, dm.dmPelsWidth) } else { (dm.dmPelsWidth, dm.dmPelsHeight) };
-    set_orientation((orient + quarter_turns) % 4, w, h).map_err(|e| {
-        r.orientation = None; // nothing changed, nothing to undo
-        e
-    })
+    set_orientation((orient + quarter_turns) % 4, w, h)?;
+    r.orientation_turns = Some(quarter_turns as i32);
+    Ok(())
+}
+
+/// Undoes exactly the quarter turns `rotate` applied, relative to whatever
+/// the orientation is now (other stacked rotation curses may have turned it
+/// further since).
+fn unrotate(turns: i32) -> Result<(), String> {
+    let dm = current_mode()?;
+    let orient = unsafe { dm.Anonymous1.Anonymous2.dmDisplayOrientation.0 };
+    let new_orient = (orient as i32 - turns).rem_euclid(4) as u32;
+    let (w, h) = if turns.rem_euclid(4) % 2 == 1 { (dm.dmPelsHeight, dm.dmPelsWidth) } else { (dm.dmPelsWidth, dm.dmPelsHeight) };
+    set_orientation(new_orient, w, h)
 }
 
 fn set_orientation(orient: u32, w: u32, h: u32) -> Result<(), String> {

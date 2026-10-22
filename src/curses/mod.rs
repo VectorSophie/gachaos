@@ -46,8 +46,14 @@ pub struct Restore {
     /// Original dark-mode wallpaper path, Linux only (gsettings tracks light
     /// and dark wallpapers separately; None everywhere else).
     pub wallpaper_dark: Option<String>,
-    /// Original display orientation (0-3) and resolution.
-    pub orientation: Option<(u32, u32, u32)>,
+    /// Quarter turns this curse actually applied to the display orientation.
+    /// Reverting subtracts them from the CURRENT orientation rather than
+    /// restoring an absolute original, same delta-based model as
+    /// `volume_delta` — capturing an absolute "original" broke when rotation
+    /// was rolled twice in a row: the second roll's "original" was already
+    /// the first roll's rotated state, so curing both left the display
+    /// rotated no matter which reverted last.
+    pub orientation_turns: Option<i32>,
     /// Signed delta this curse applied to master volume (0-1 scale). Reverting
     /// subtracts it from the CURRENT value rather than restoring an absolute
     /// original, so concurrently stacked volume curses combine and cancel
@@ -188,7 +194,7 @@ fn merge(into: &mut Restore, r: Restore) {
     into.swap = into.swap.or(r.swap);
     into.wallpaper = into.wallpaper.take().or(r.wallpaper);
     into.wallpaper_dark = into.wallpaper_dark.take().or(r.wallpaper_dark);
-    into.orientation = into.orientation.or(r.orientation);
+    into.orientation_turns = into.orientation_turns.or(r.orientation_turns);
     into.volume_delta = into.volume_delta.or(r.volume_delta);
     into.desktop_color = into.desktop_color.or(r.desktop_color);
     into.mouse_speed_delta = into.mouse_speed_delta.or(r.mouse_speed_delta);
